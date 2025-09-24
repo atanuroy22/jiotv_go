@@ -18,9 +18,11 @@ We assume that you have already downloaded the [latest release of JioTV Go](../g
 
 Locate the folder where you downloaded JioTV Go. Here are three easy ways to open the terminal in that directory:
 
-- **Option 1:** Open the folder and type `cmd` in the address bar.
-- **Option 2:** Right-click the folder while holding `Shift` and select "Open Terminal Here."
-- **Option 3:** Open Windows Terminal, type `cd`, add a space, and then drag and drop the JioTV Go folder into the terminal.
+- **Option 1:** Open the folder and type `cmd` or `powershell` in the address bar.
+- **Option 2:** Right-click the folder while holding `Shift` and select "Open Command Prompt here" or "Open PowerShell window here."
+- **Option 3:** Open Windows Terminal or PowerShell, type `cd`, add a space, and then drag and drop the JioTV Go folder into the terminal.
+
+> **Note:** PowerShell is recommended over Command Prompt (cmd) for better functionality and modern Windows systems.
 
 ### Step 2: Launch JioTV Go
 

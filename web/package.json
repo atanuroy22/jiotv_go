@@ -1,4 +1,6 @@
 {
+  "name": "jiotv-go-web",
+  "description": "Frontend for JioTV Go - Web interface and styling",
   "devDependencies": {
     "@tailwindcss/line-clamp": "^0.4.4",
     "daisyui": "^4.12.24",
@@ -10,6 +12,9 @@
   "scripts": {
     "build": "tailwindcss build -i ./static/internal/input.css -o ./static/internal/tailwind.css -m",
     "watch": "tailwindcss -i ./static/internal/input.css -o ./static/internal/tailwind.css -w",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean": "rm -f ./static/internal/tailwind.css"
   }
 }

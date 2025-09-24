@@ -10,7 +10,14 @@ To build JioTV Go from source, you'll need to have [Go](https://golang.org/) ins
 
 Let's start by cloning the repository:
 
+**Linux/macOS:**
 ```bash
+git clone https://github.com/jiotv-go/jiotv_go.git
+cd jiotv_go
+```
+
+**Windows (PowerShell):**
+```powershell
 git clone https://github.com/jiotv-go/jiotv_go.git
 cd jiotv_go
 ```
@@ -19,16 +26,28 @@ cd jiotv_go
 
 Now, let's build the project:
 
+**Linux/macOS:**
 ```bash
 go build . -o build/jiotv_go
+```
+
+**Windows (PowerShell):**
+```powershell
+go build . -o build/jiotv_go.exe
 ```
 
 ### Run
 
 Finally, let's run the server:
 
+**Linux/macOS:**
 ```bash
 ./build/jiotv_go [commands]
+```
+
+**Windows (PowerShell):**
+```powershell
+.\build\jiotv_go.exe [commands]
 ```
 
 ## Docker
@@ -66,14 +85,32 @@ JioTV Go is powered by [Golang](https://golang.org/), making it an exciting proj
    - First, make sure you have Golang installed on your system.
 
 2. **Start the Server:**
-   - Fire up the server with:
-     ```sh
-     go run ./cmd/jiotv_go
-     ```
-     Please note that you'll need to stop and restart the server manually when you make changes to the code.
+   
+   **Linux/macOS:**
+   ```bash
+   go run ./cmd/jiotv_go
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   go run .\cmd\jiotv_go
+   ```
+   
+   Please note that you'll need to stop and restart the server manually when you make changes to the code.
 
 3. **Enable Debugging and Auto-Reloading:**
-   - To enable automatic reloading on template changes in the `views` folder and enable debug logs in the console/terminal, set `JIOTV_DEBUG=true` or [`debug` config value to `true`]().
+   
+   To enable automatic reloading on template changes in the `views` folder and enable debug logs in the console/terminal:
+   
+   **Linux/macOS:**
+   ```bash
+   JIOTV_DEBUG=true JIOTV_LOG_TO_STDOUT=true go run main.go serve --host 127.0.0.1 --port 5001
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   $env:JIOTV_DEBUG="true"; $env:JIOTV_LOG_TO_STDOUT="true"; go run main.go serve --host 127.0.0.1 --port 5001
+   ```
 
 That's it! You're now all set to explore and contribute to JioTV Go. Happy coding! 🖥️👩‍💻👨‍💻
 
@@ -85,27 +122,40 @@ At JioTV Go, we use the versatile [TailwindCSS](https://tailwindcss.com/) for st
    - Make sure you have NodeJS installed on your system.
 
 2. **Navigate to the `web` Directory:**
-   - Open a new terminal window and navigate to the project's root directory. Then, switch to the `web` directory by running:
-     ```sh
-     cd web
-     ```
+   - Open a new terminal window and navigate to the project's root directory. Then, switch to the `web` directory by running according to your system:
+   **Linux/macOS:**
+   ```bash
+   cd web
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   cd web
+   ```
 
 3. **Install Dependencies:**
-   
-   - Install the necessary dependencies by running:
-     ```sh
-     npm install
-     ```
+   - Install the necessary dependencies by running according to your system:
+   **Linux/macOS/Windows:**
+   ```bash
+   npm install
+   ```
 
 4. **Real-Time TailwindCSS Updates:**
    
-   - To keep TailwindCSS up to date with your changes in real-time, run the following command:
-     ```sh
-     npm run watch
-     ```
+   To keep TailwindCSS up to date with your changes in real-time:
+   
+   **Linux/macOS/Windows:**
+   ```bash
+   npm run watch
+   ```
 
 5. **Build Minified CSS:**
    - Once you're satisfied with your style modifications, it's time to build the minified CSS file:
+   
+   **Linux/macOS/Windows:**
+   ```bash
+   npm run build
+   ```
      ```sh
      npm run build
      ```
