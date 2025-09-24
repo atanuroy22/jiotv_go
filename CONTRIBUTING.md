@@ -82,7 +82,7 @@ Improvements to project documentation are also welcome. If you see any areas tha
 Before submitting a pull request, ensure the following:
 
 - Your code follows our coding guidelines and existing patterns.
-- Your commit messages are clear and follow [conventional commit format](https://www.conventionalcommits.org/).
+- Your commit messages are clear and follow our guidelines.
 - You have added or updated tests where necessary.
 - All existing tests pass (`go test ./...` for backend, `npm test` for frontend).
 - The documentation is updated if needed.

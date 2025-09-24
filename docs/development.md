@@ -142,7 +142,7 @@ At JioTV Go, we use the versatile [TailwindCSS](https://tailwindcss.com/) for st
 
 4. **Real-Time TailwindCSS Updates:**
    
-   To keep TailwindCSS up to date with your changes in real-time:
+   To keep TailwindCSS up to date with your changes in real-time, by running according to your system:
    
    **Linux/macOS/Windows:**
    ```bash
