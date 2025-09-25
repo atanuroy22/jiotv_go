@@ -1,79 +1,54 @@
-// Patch the real JSDOM window/document, not just global
+// Set up TextEncoder/TextDecoder for JSDOM compatibility
 const { TextEncoder, TextDecoder } = require('util');
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-// Use real JSDOM window/document
-const jsdomWindow = globalThis.window;
-const jsdomDocument = globalThis.document;
+// We'll use the real JSDOM localStorage and attach spies when needed
 
-// Helper: fresh element mock
-function getMockElement(id = '', tagName = 'DIV') {
-  return {
-    id,
-    tagName: tagName.toUpperCase(),
-    textContent: id === 'test-element' ? 'Test Content' : '',
-    innerHTML: '',
-    className: '',
-    classList: {
-      add: jest.fn(),
-      remove: jest.fn(),
-      contains: jest.fn(() => false),
-      replace: jest.fn(),
-    },
-    setAttribute: jest.fn(),
-    getAttribute: jest.fn(),
-    appendChild: jest.fn(),
-  };
-}
+// Mock fetch for testing
+global.fetch = jest.fn();
 
-// Patch JSDOM's document methods
-jsdomDocument.getElementById = jest.fn((id) => {
-  if (id === 'non-existent') return null;
-  return getMockElement(id);
-});
-jsdomDocument.createElement = jest.fn((tagName) => getMockElement('', tagName));
+// Use real history; we'll spy on replaceState (so underlying implementation still runs)
+// We'll attach the spy after utils are loaded.
 
-// Patch JSDOM's window.history
-jsdomWindow.history.replaceState = jest.fn();
+// Ensure a clean localStorage state at file start
+localStorage.clear();
 
-// Patch localStorage
-const localStorageMock = {
-  data: {},
-  getItem: jest.fn(key => localStorageMock.data[key] || null),
-  setItem: jest.fn((key, value) => { localStorageMock.data[key] = value; }),
-  removeItem: jest.fn(key => { delete localStorageMock.data[key]; }),
-  clear: jest.fn(() => { localStorageMock.data = {}; }),
-};
-jsdomWindow.localStorage = localStorageMock;
-global.localStorage = localStorageMock;
-
-// Patch fetch
-jsdomWindow.fetch = jest.fn();
-global.fetch = jsdomWindow.fetch;
-
-// Patch URLSearchParams if needed
-jsdomWindow.URLSearchParams = URLSearchParams;
-global.URLSearchParams = URLSearchParams;
-
-// Now, load/eval your utils.js code as before
+// Load the utility functions by evaluating the file content
 const fs = require('fs');
 const path = require('path');
 const utilsScript = fs.readFileSync(path.join(__dirname, '..', 'static', 'internal', 'utils.js'), 'utf8');
+
+// Remove the module.exports part and evaluate the functions
 const scriptWithoutExports = utilsScript.replace(/if \(typeof module.*\{[\s\S]*\}/, '');
 eval(scriptWithoutExports);
 
 describe('Utility Functions', () => {
-  beforeEach(() => {
-    // Clear mocks
-    jest.clearAllMocks();
-    localStorageMock.clear();
-  });
+  // Attach spy once so we preserve original behavior
+  if (!jest.isMockFunction(window.history.replaceState)) {
+    jest.spyOn(window.history, 'replaceState');
+  }
 
-  afterEach(() => {
-    // Reset mocks
-    jest.resetAllMocks();
+  beforeEach(() => {
+    // Clear mocks usage data
+    jest.clearAllMocks();
+    localStorage.clear();
+    // Rebuild DOM elements required for tests
+    document.body.innerHTML = `
+      <div id="test-element">Test Content</div>
+      <div id="element-1"></div>
+      <div id="element-2"></div>
+      <button id="favorite-btn-123" class="btn"></button>
+      <span id="star-icon-123"></span>
+      <span id="x-icon-123" class="hidden"></span>
+    `;
+    // Set initial URL state using pushState so window.location is actually updated
+    window.history.pushState({}, '', '/channels?search=test&category=sports');
   });
+  // NOTE: We intentionally do NOT call jest.resetAllMocks() because it removes
+  // mock implementations (like document.getElementById, history.replaceState,
+  // and localStorage methods) that the tests depend on across cases. We only
+  // clear call history so each test starts fresh while retaining behavior.
 
   describe('DOM Utilities', () => {
     describe('safeGetElementById', () => {
@@ -135,14 +110,14 @@ describe('Utility Functions', () => {
       });
 
       it('should create element with custom attributes', () => {
-        const element = createElement('a', { 
-          href: '/test', 
+        const element = createElement('a', {
+          href: '/test',
           'data-channel-id': '123',
           tabindex: '0'
         });
-        expect(element.setAttribute).toHaveBeenCalledWith('href', '/test');
-        expect(element.setAttribute).toHaveBeenCalledWith('data-channel-id', '123');
-        expect(element.setAttribute).toHaveBeenCalledWith('tabindex', '0');
+        expect(element.getAttribute('href')).toBe('/test');
+        expect(element.getAttribute('data-channel-id')).toBe('123');
+        expect(element.getAttribute('tabindex')).toBe('0');
       });
     });
   });
@@ -188,7 +163,7 @@ describe('Utility Functions', () => {
   describe('LocalStorage Utilities', () => {
     describe('getLocalStorageItem', () => {
       it('should return parsed JSON value when item exists', () => {
-        localStorageMock.setItem('test-key', JSON.stringify({ name: 'test' }));
+        localStorage.setItem('test-key', JSON.stringify({ name: 'test' }));
         const result = getLocalStorageItem('test-key');
         expect(result).toEqual({ name: 'test' });
       });
@@ -199,7 +174,7 @@ describe('Utility Functions', () => {
       });
 
       it('should return default value when JSON parsing fails', () => {
-        localStorageMock.setItem('invalid-json', 'invalid json');
+        localStorage.setItem('invalid-json', 'invalid json');
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
         const result = getLocalStorageItem('invalid-json', 'default');
         expect(result).toBe('default');
@@ -212,11 +187,11 @@ describe('Utility Functions', () => {
       it('should store value as JSON string', () => {
         const result = setLocalStorageItem('test-key', { name: 'test' });
         expect(result).toBe(true);
-        expect(localStorageMock.setItem).toHaveBeenCalledWith('test-key', '{"name":"test"}');
+        expect(localStorage.getItem('test-key')).toBe('{"name":"test"}');
       });
 
       it('should handle storage errors gracefully', () => {
-        localStorageMock.setItem.mockImplementation(() => {
+        const setSpy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
           throw new Error('Storage quota exceeded');
         });
         const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -224,14 +199,16 @@ describe('Utility Functions', () => {
         expect(result).toBe(false);
         expect(consoleSpy).toHaveBeenCalled();
         consoleSpy.mockRestore();
+        setSpy.mockRestore();
       });
     });
 
     describe('removeLocalStorageItem', () => {
       it('should remove item from localStorage', () => {
+        localStorage.setItem('test-key', '123');
         const result = removeLocalStorageItem('test-key');
         expect(result).toBe(true);
-        expect(localStorageMock.removeItem).toHaveBeenCalledWith('test-key');
+        expect(localStorage.getItem('test-key')).toBeNull();
       });
     });
   });
@@ -249,29 +226,26 @@ describe('Utility Functions', () => {
     describe('updateUrlParameter', () => {
       it('should update existing parameter', () => {
         updateUrlParameter('search', 'new-search');
-        expect(global.history.replaceState).toHaveBeenCalledWith(
-          {},
-          '',
-          '/channels?search=new-search&category=sports'
-        );
+        const calls = window.history.replaceState.mock.calls;
+        const last = calls[calls.length - 1];
+        const base = window.location.pathname === '/channels' ? '/channels' : '/';
+        expect(last).toEqual([{}, '', `${base}?search=new-search&category=sports`]);
       });
 
       it('should add new parameter', () => {
         updateUrlParameter('language', 'english');
-        expect(global.history.replaceState).toHaveBeenCalledWith(
-          {},
-          '',
-          '/channels?search=test&category=sports&language=english'
-        );
+        const calls = window.history.replaceState.mock.calls;
+        const last = calls[calls.length - 1];
+        const base = window.location.pathname === '/channels' ? '/channels' : '/';
+        expect(last).toEqual([{}, '', `${base}?search=test&category=sports&language=english`]);
       });
 
       it('should remove parameter when value is empty', () => {
         updateUrlParameter('search', '');
-        expect(global.history.replaceState).toHaveBeenCalledWith(
-          {},
-          '',
-          '/channels?category=sports'
-        );
+        const calls = window.history.replaceState.mock.calls;
+        const last = calls[calls.length - 1];
+        const base = window.location.pathname === '/channels' ? '/channels' : '/';
+        expect(last).toEqual([{}, '', `${base}?category=sports`]);
       });
 
       it('should use custom replaceState function when provided', () => {
@@ -292,11 +266,10 @@ describe('Utility Functions', () => {
           category: 'news',
           language: 'english'
         });
-        expect(global.history.replaceState).toHaveBeenCalledWith(
-          {},
-          '',
-          '/channels?search=new-search&category=news&language=english'
-        );
+        const calls = window.history.replaceState.mock.calls;
+        const last = calls[calls.length - 1];
+        const base = window.location.pathname === '/channels' ? '/channels' : '/';
+        expect(last).toEqual([{}, '', `${base}?search=new-search&category=news&language=english`]);
       });
     });
   });
