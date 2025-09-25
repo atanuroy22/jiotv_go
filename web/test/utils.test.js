@@ -72,7 +72,7 @@ global.window = {
   },
   URLSearchParams: URLSearchParams,
 };
-
+// For localStorage tests
 // global.localStorage = localStorageMock;
 global.history.replaceState = jest.fn();
 
