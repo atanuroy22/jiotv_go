@@ -3,6 +3,26 @@ const { TextEncoder, TextDecoder } = require('util');
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
+// Create a function that returns a fresh mock element for every call
+function getMockElement(id = '', tagName = 'DIV') {
+  return {
+    id,
+    tagName: tagName.toUpperCase(),
+    textContent: id === 'test-element' ? 'Test Content' : '',
+    innerHTML: '',
+    className: '',
+    classList: {
+      add: jest.fn(),
+      remove: jest.fn(),
+      contains: jest.fn(() => false),
+      replace: jest.fn(),
+    },
+    setAttribute: jest.fn(),
+    getAttribute: jest.fn(),
+    appendChild: jest.fn(),
+  };
+}
+
 // Mock localStorage for testing
 const localStorageMock = {
   data: {},
@@ -22,43 +42,13 @@ const localStorageMock = {
 global.fetch = jest.fn();
 
 // Mock window and document
-const mockElement = {
-  textContent: 'Test Content',
-  innerHTML: '',
-  classList: {
-    add: jest.fn(),
-    remove: jest.fn(),
-    contains: jest.fn(() => false),
-    replace: jest.fn(),
-  },
-  setAttribute: jest.fn(),
-  getAttribute: jest.fn(),
-  appendChild: jest.fn(),
-  id: '',
-  className: '',
-  tagName: 'DIV',
-};
-
 global.document = {
   getElementById: jest.fn((id) => {
-    if (id === 'test-element' || id === 'element-1' || id === 'element-2' || 
-        id.startsWith('favorite-btn-') || id.startsWith('star-icon-') || id.startsWith('x-icon-')) {
-      const element = { ...mockElement };
-      element.id = id;
-      if (id === 'test-element') {
-        element.textContent = 'Test Content';
-      }
-      if (id.includes('hidden')) {
-        element.classList.contains = jest.fn(() => true);
-      }
-      return element;
-    }
-    return null;
+    // Return mock elements for all but 'non-existent'
+    if (id === 'non-existent') return null;
+    return getMockElement(id);
   }),
-  createElement: jest.fn((tagName) => ({
-    ...mockElement,
-    tagName: tagName.toUpperCase(),
-  })),
+  createElement: jest.fn((tagName) => getMockElement('', tagName)),
 };
 
 global.window = {
@@ -72,9 +62,9 @@ global.window = {
   },
   URLSearchParams: URLSearchParams,
 };
-// For localStorage tests
-// global.localStorage = localStorageMock;
-global.history.replaceState = jest.fn();
+
+global.localStorage = localStorageMock;
+global.history = { replaceState: jest.fn() };
 
 // Load the utility functions by evaluating the file content
 const fs = require('fs');
