@@ -73,7 +73,8 @@ global.window = {
   URLSearchParams: URLSearchParams,
 };
 
-global.localStorage = localStorageMock;
+// global.localStorage = localStorageMock;
+global.history.replaceState = jest.fn();
 
 // Load the utility functions by evaluating the file content
 const fs = require('fs');
