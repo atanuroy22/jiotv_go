@@ -1,9 +1,13 @@
-// Set up TextEncoder/TextDecoder for JSDOM compatibility
+// Patch the real JSDOM window/document, not just global
 const { TextEncoder, TextDecoder } = require('util');
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-// Create a function that returns a fresh mock element for every call
+// Use real JSDOM window/document
+const jsdomWindow = globalThis.window;
+const jsdomDocument = globalThis.document;
+
+// Helper: fresh element mock
 function getMockElement(id = '', tagName = 'DIV') {
   return {
     id,
@@ -23,55 +27,39 @@ function getMockElement(id = '', tagName = 'DIV') {
   };
 }
 
-// Mock localStorage for testing
+// Patch JSDOM's document methods
+jsdomDocument.getElementById = jest.fn((id) => {
+  if (id === 'non-existent') return null;
+  return getMockElement(id);
+});
+jsdomDocument.createElement = jest.fn((tagName) => getMockElement('', tagName));
+
+// Patch JSDOM's window.history
+jsdomWindow.history.replaceState = jest.fn();
+
+// Patch localStorage
 const localStorageMock = {
   data: {},
   getItem: jest.fn(key => localStorageMock.data[key] || null),
-  setItem: jest.fn((key, value) => {
-    localStorageMock.data[key] = value;
-  }),
-  removeItem: jest.fn(key => {
-    delete localStorageMock.data[key];
-  }),
-  clear: jest.fn(() => {
-    localStorageMock.data = {};
-  }),
+  setItem: jest.fn((key, value) => { localStorageMock.data[key] = value; }),
+  removeItem: jest.fn(key => { delete localStorageMock.data[key]; }),
+  clear: jest.fn(() => { localStorageMock.data = {}; }),
 };
-
-// Mock fetch for testing
-global.fetch = jest.fn();
-
-// Mock window and document
-global.document = {
-  getElementById: jest.fn((id) => {
-    // Return mock elements for all but 'non-existent'
-    if (id === 'non-existent') return null;
-    return getMockElement(id);
-  }),
-  createElement: jest.fn((tagName) => getMockElement('', tagName)),
-};
-
-global.window = {
-  location: {
-    href: 'http://localhost:3000/channels?search=test&category=sports',
-    pathname: '/channels',
-    search: '?search=test&category=sports'
-  },
-  history: {
-    replaceState: jest.fn()
-  },
-  URLSearchParams: URLSearchParams,
-};
-
+jsdomWindow.localStorage = localStorageMock;
 global.localStorage = localStorageMock;
-global.history = { replaceState: jest.fn() };
 
-// Load the utility functions by evaluating the file content
+// Patch fetch
+jsdomWindow.fetch = jest.fn();
+global.fetch = jsdomWindow.fetch;
+
+// Patch URLSearchParams if needed
+jsdomWindow.URLSearchParams = URLSearchParams;
+global.URLSearchParams = URLSearchParams;
+
+// Now, load/eval your utils.js code as before
 const fs = require('fs');
 const path = require('path');
 const utilsScript = fs.readFileSync(path.join(__dirname, '..', 'static', 'internal', 'utils.js'), 'utf8');
-
-// Remove the module.exports part and evaluate the functions
 const scriptWithoutExports = utilsScript.replace(/if \(typeof module.*\{[\s\S]*\}/, '');
 eval(scriptWithoutExports);
 
