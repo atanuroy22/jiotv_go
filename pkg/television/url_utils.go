@@ -15,6 +15,7 @@ type EncryptedURLConfig struct {
 	ChannelID   string
 	EndpointURL string // The endpoint URL pattern (e.g., "/render.m3u8", "/render.ts")
 	Quality     string // Quality parameter for live streams
+	Hdnea       string // Akamai token value to be appended as query param hdnea
 }
 
 // CreateEncryptedURL creates an encrypted URL with auth parameters for various endpoints
@@ -36,6 +37,10 @@ func CreateEncryptedURL(config EncryptedURLConfig) ([]byte, error) {
 
 	if config.Quality != "" {
 		result += "&q=" + config.Quality
+	}
+
+	if config.Hdnea != "" {
+		result += "&hdnea=" + config.Hdnea
 	}
 
 	return []byte(result), nil

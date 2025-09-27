@@ -86,6 +86,7 @@ type LiveURLOutput struct {
 	IsDRM       bool     `json:"isDRM"`
 	ExtID       string   `json:"extId"`
 	AlgoName    string   `json:"algoName"`
+	Hdnea       string   `json:"-"` // parsed from URLs in Live response (hdnea query param); may rotate via Set-Cookie (__hdnea__) on m3u8/ts requests
 }
 
 // CategoryMap represents Categories for channels

@@ -58,13 +58,13 @@ func DecryptURLParam(paramName, encryptedURL string) (string, error) {
 	if encryptedURL == "" {
 		return "", fmt.Errorf("%s not provided", paramName)
 	}
-	
+
 	decoded, err := secureurl.DecryptURL(encryptedURL)
 	if err != nil {
 		utils.SafeLogf("Error decrypting %s: %v", paramName, err)
 		return "", err
 	}
-	
+
 	return decoded, nil
 }
 
@@ -73,12 +73,14 @@ func ProxyRequest(c *fiber.Ctx, url string, client *fasthttp.Client, userAgent s
 	if userAgent != "" {
 		SetCommonHeaders(c, userAgent)
 	}
-	
+
 	if err := proxy.Do(c, url, client); err != nil {
 		return err
 	}
-	
+
 	c.Response().Header.Del(fiber.HeaderServer)
+	// Do not leak upstream cookies to the client
+	c.Response().Header.Del(fiber.HeaderSetCookie)
 	return nil
 }
 

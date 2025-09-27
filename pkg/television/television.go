@@ -203,11 +203,61 @@ func (tv *Television) Live(channelID string) (*LiveURLOutput, error) {
 		return nil, err
 	}
 
+	// Extract hdnea from any URL fields in the response (Live does not set Set-Cookie)
+	extractHdneaFromURL := func(u string) string {
+		if u == "" {
+			return ""
+		}
+		idx := strings.Index(u, "hdnea=")
+		if idx == -1 {
+			return ""
+		}
+		// token starts after hdnea=
+		token := u[idx+len("hdnea="):]
+		if i := strings.IndexByte(token, '&'); i != -1 {
+			token = token[:i]
+		}
+		return token
+	}
+	hdnea := extractHdneaFromURL(result.Bitrates.Auto)
+	if hdnea == "" {
+		hdnea = extractHdneaFromURL(result.Mpd.Result)
+	}
+	result.Hdnea = hdnea
+
+	// If hdnea exists and URLs don't already have it, append as query param
+	if hdnea != "" {
+		appendHdnea := func(u string) string {
+			if u == "" {
+				return u
+			}
+			if strings.Contains(u, "hdnea=") {
+				return u
+			}
+			sep := "?"
+			if strings.Contains(u, "?") {
+				sep = "&"
+			}
+			return u + sep + "hdnea=" + hdnea
+		}
+		result.Bitrates.Auto = appendHdnea(result.Bitrates.Auto)
+		result.Bitrates.High = appendHdnea(result.Bitrates.High)
+		result.Bitrates.Medium = appendHdnea(result.Bitrates.Medium)
+		result.Bitrates.Low = appendHdnea(result.Bitrates.Low)
+		result.Result = appendHdnea(result.Result)
+		if result.Mpd.Result != "" {
+			result.Mpd.Result = appendHdnea(result.Mpd.Result)
+		}
+		if result.Mpd.Key != "" {
+			result.Mpd.Key = appendHdnea(result.Mpd.Key)
+		}
+	}
+
 	return &result, nil
 }
 
 // Render method does HTTP GET request to the provided URL and return the response body
-func (tv *Television) Render(url string) ([]byte, int) {
+func (tv *Television) Render(url string) ([]byte, int, string) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
@@ -219,6 +269,19 @@ func (tv *Television) Render(url string) ([]byte, int) {
 		req.Header.Set(key, value)
 	}
 
+	// If hdnea is provided as query param on URL, also send it as cookie __hdnea__ per downstream requirement
+	if strings.Contains(url, "hdnea=") {
+		// quick parse to extract value
+		q := url[strings.Index(url, "?")+1:]
+		for _, p := range strings.Split(q, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				token := strings.TrimPrefix(p, "hdnea=")
+				req.Header.SetCookie("__hdnea__", token)
+				break
+			}
+		}
+	}
+
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
@@ -228,8 +291,21 @@ func (tv *Television) Render(url string) ([]byte, int) {
 	}
 
 	buf := resp.Body()
+	// Capture any __hdnea__ Set-Cookie returned by upstream so caller can set cookie on client
+	var newHdnea string
+	// Iterate Set-Cookie headers (avoid deprecated VisitAll)
+	for _, v := range resp.Header.PeekAll("Set-Cookie") {
+		sv := string(v)
+		if strings.HasPrefix(sv, "__hdnea__=") {
+			token := sv[len("__hdnea__="):]
+			if i := strings.IndexByte(token, ';'); i != -1 {
+				token = token[:i]
+			}
+			newHdnea = token
+		}
+	}
 
-	return buf, resp.StatusCode()
+	return buf, resp.StatusCode(), newHdnea
 }
 
 // detectAndParseFormat attempts to detect the format of custom channels data and parse it
@@ -453,13 +529,25 @@ func FilterChannelsByDefaults(channels []Channel, categories, languages []int) [
 }
 
 func ReplaceM3U8(baseUrl, match []byte, params, channel_id string, quality string) []byte {
+	// Attempt to extract hdnea from params if present
+	hdnea := ""
+	if strings.Contains(params, "hdnea=") {
+		// naive extraction without net/url to avoid allocation; safe since params is small
+		for _, p := range strings.Split(params, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				hdnea = strings.TrimPrefix(p, "hdnea=")
+				break
+			}
+		}
+	}
 	config := EncryptedURLConfig{
 		BaseURL:     string(baseUrl),
 		Match:       string(match),
 		Params:      params,
 		ChannelID:   channel_id,
 		EndpointURL: "/render.m3u8",
-		Quality:   quality,
+		Quality:     quality,
+		Hdnea:       hdnea,
 	}
 
 	result, err := CreateEncryptedURL(config)
@@ -474,11 +562,21 @@ func ReplaceTS(baseUrl, match []byte, params string) []byte {
 		return []byte(string(baseUrl) + string(match) + "?" + params)
 	}
 
+	hdnea := ""
+	if strings.Contains(params, "hdnea=") {
+		for _, p := range strings.Split(params, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				hdnea = strings.TrimPrefix(p, "hdnea=")
+				break
+			}
+		}
+	}
 	config := EncryptedURLConfig{
 		BaseURL:     string(baseUrl),
 		Match:       string(match),
 		Params:      params,
 		EndpointURL: "/render.ts",
+		Hdnea:       hdnea,
 	}
 
 	result, err := CreateEncryptedURL(config)
@@ -493,11 +591,21 @@ func ReplaceAAC(baseUrl, match []byte, params string) []byte {
 		return []byte(string(baseUrl) + string(match) + "?" + params)
 	}
 
+	hdnea := ""
+	if strings.Contains(params, "hdnea=") {
+		for _, p := range strings.Split(params, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				hdnea = strings.TrimPrefix(p, "hdnea=")
+				break
+			}
+		}
+	}
 	config := EncryptedURLConfig{
 		BaseURL:     string(baseUrl),
 		Match:       string(match),
 		Params:      params,
 		EndpointURL: "/render.ts",
+		Hdnea:       hdnea,
 	}
 
 	result, err := CreateEncryptedURL(config)
@@ -508,12 +616,22 @@ func ReplaceAAC(baseUrl, match []byte, params string) []byte {
 }
 
 func ReplaceKey(match []byte, params, channel_id string) []byte {
+	hdnea := ""
+	if strings.Contains(params, "hdnea=") {
+		for _, p := range strings.Split(params, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				hdnea = strings.TrimPrefix(p, "hdnea=")
+				break
+			}
+		}
+	}
 	config := EncryptedURLConfig{
 		BaseURL:     "",
 		Match:       string(match),
 		Params:      params,
 		ChannelID:   channel_id,
 		EndpointURL: "/render.key",
+		Hdnea:       hdnea,
 	}
 
 	result, err := CreateEncryptedURL(config)
