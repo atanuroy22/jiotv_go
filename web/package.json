@@ -4,10 +4,10 @@
   "devDependencies": {
     "@tailwindcss/line-clamp": "^0.4.4",
     "daisyui": "^4.12.24",
-    "jest": "^30.1.3",
-    "jest-environment-jsdom": "^30.1.2",
-    "jsdom": "^27.0.0",
-    "tailwindcss": "^3.4.17"
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "jsdom": "^27.0.1",
+    "tailwindcss": "^3.4.18"
   },
   "scripts": {
     "build": "tailwindcss build -i ./static/internal/input.css -o ./static/internal/tailwind.css -m",
