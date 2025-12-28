@@ -3,7 +3,7 @@ module github.com/jiotv-go/jiotv_go/v3
 go 1.25
 
 require (
-	github.com/BurntSushi/toml v1.5.0
+	github.com/BurntSushi/toml v1.6.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/madflojo/tasks v1.2.1
 	github.com/stretchr/testify v1.11.1
