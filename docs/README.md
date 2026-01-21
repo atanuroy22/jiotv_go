@@ -22,5 +22,5 @@ Get Started with JioTV Go by following the [Get Started](./get_started.md) guide
 
 Stay up to date on JioTV Go's development and connect with the community for questions and support.
 
-- Telegram Announcement Channel: [https://t.me/jiotv_go](https://telegram.me/jiotv_go)
-- Telegram Group: [https://t.me/jiotv_go_chat](https://telegram.me/jiotv_go_chat)
+- Telegram Announcement Channel: [https://t.me/atanuroy2222](https://telegram.me/atanuroy2222)
+- Telegram Group: [https://t.me/atanuroy2222](https://telegram.me/atanuroy2222)
