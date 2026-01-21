@@ -46,7 +46,7 @@ const initializeTheme = () => {
 
 initializeTheme();
 function isCatchupEnabled() {
-  const v = getLocalStorageItem("catchupMode", true);
+  const v = getLocalStorageItem("catchupMode", false);
   return !!v;
 }
 function applyCatchupToCards() {
@@ -78,20 +78,45 @@ function styleCatchupCards() {
 }
 function updateCatchupUI() {
   const btn = document.getElementById("catchup-toggle");
+  const label = document.getElementById("catchup-toggle-label");
+  const enabled = isCatchupEnabled();
   if (btn) {
-    if (isCatchupEnabled()) {
-      btn.classList.add("btn-active");
+    if (typeof btn.checked !== "undefined") {
+      btn.checked = enabled;
     } else {
-      btn.classList.remove("btn-active");
+      if (enabled) {
+        btn.classList.add("btn-active");
+      } else {
+        btn.classList.remove("btn-active");
+      }
     }
+  }
+  if (label) {
+    label.textContent = enabled ? "Catchup: ON" : "Catchup: OFF";
   }
   applyCatchupToCards();
   styleCatchupCards();
 }
 function toggleCatchupMode() {
-  const next = !isCatchupEnabled();
+  const btn = document.getElementById("catchup-toggle");
+  let next = !isCatchupEnabled();
+  if (btn && typeof btn.checked !== "undefined") {
+    next = !!btn.checked;
+  }
   setLocalStorageItem("catchupMode", next);
   updateCatchupUI();
+  const path = window.location.pathname;
+  const match = path.match(/^\/(play|catchup)\/([^/?#]+)/);
+  if (match) {
+    const id = match[2];
+    const params = getCurrentUrlParams();
+    const qs = params.toString();
+    const base = next ? "/catchup/" : "/play/";
+    const target = base + id + (qs ? "?" + qs : "");
+    if ((next && match[1] !== "catchup") || (!next && match[1] !== "play")) {
+      window.location.replace(target);
+    }
+  }
 }
 document.addEventListener('DOMContentLoaded', function() {
   updateCatchupUI();
