@@ -19,10 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install mdBook
-        run: |
-          curl -sSL https://github.com/rust-lang/mdBook/releases/latest/download/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz -o mdbook.tar.gz
-          tar -xzf mdbook.tar.gz
-          sudo mv mdbook /usr/local/bin/mdbook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@latest
       - name: Build docs
         run: mdbook build docs
       - name: Prepare site
