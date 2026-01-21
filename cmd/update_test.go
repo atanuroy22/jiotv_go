@@ -476,7 +476,7 @@ func updateWithBaseURL(currentVersion, customVersion, baseURL string) error {
 
 // getLatestReleaseWithBaseURL is a test helper that allows configurable base URL
 func getLatestReleaseWithBaseURL(customVersion, baseURL string) (*Release, error) {
-	owner := "JioTV-Go"
+	owner := "atanuroy22"
 	repo := "jiotv_go"
 
 	var url string
