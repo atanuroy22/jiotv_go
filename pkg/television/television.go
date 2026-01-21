@@ -686,3 +686,91 @@ func getSLChannel(channelID string) (*LiveURLOutput, error) {
 		return nil, fmt.Errorf("Channel not found")
 	}
 }
+
+func (tv *Television) GetCatchupURL(channelID, srno, start, end string) (*LiveURLOutput, error) {
+	formData := fasthttp.AcquireArgs()
+	defer fasthttp.ReleaseArgs(formData)
+
+	formData.Add("stream_type", "Catchup")
+	formData.Add("channel_id", channelID)
+	formData.Add("programId", srno)
+	formData.Add("showtime", "000000")
+	formData.Add("srno", srno)
+	formData.Add("begin", start)
+	formData.Add("end", end)
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	for key, value := range tv.Headers {
+		req.Header.Set(key, value)
+	}
+
+	url := "https://" + JIOTV_API_DOMAIN + urls.PlaybackAPIPath
+	req.Header.Set(headers.AccessToken, tv.AccessToken)
+	req.SetRequestURI(url)
+	req.Header.SetMethod("POST")
+	req.SetBody(formData.QueryString())
+	req.Header.Set("channel_id", channelID)
+	req.Header.Set("srno", srno)
+
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		if err := tv.Client.Do(req, resp); err != nil {
+			if strings.Contains(err.Error(), "server closed connection before returning the first response byte") {
+				utils.Log.Printf("Retrying the catchup request (attempt %d/%d)...", i+1, maxRetries)
+				continue
+			}
+			utils.Log.Panicln(err)
+			return nil, err
+		}
+		break
+	}
+	if resp.StatusCode() != fasthttp.StatusOK {
+		response := string(resp.Body())
+		utils.Log.Printf("Catchup request failed with status code: %d", resp.StatusCode())
+		utils.Log.Println("Request headers:", req.Header.String())
+		utils.Log.Println("Request data:", formData.String())
+		utils.Log.Printf("API Response: %s", response)
+		var errorResp map[string]interface{}
+		if err := json.Unmarshal(resp.Body(), &errorResp); err == nil {
+			if code, ok := errorResp["code"].(float64); ok {
+				utils.Log.Printf("API Error Code: %.0f", code)
+			}
+			if message, ok := errorResp["message"].(string); ok {
+				utils.Log.Printf("API Error Message: %s", message)
+			}
+		}
+		return nil, fmt.Errorf("catchup request failed with status code: %d", resp.StatusCode())
+	}
+
+	var result LiveURLOutput
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		utils.Log.Panicln(err)
+		return nil, err
+	}
+
+	extractHdneaFromURL := func(u string) string {
+		if u == "" {
+			return ""
+		}
+		idx := strings.Index(u, "hdnea=")
+		if idx == -1 {
+			return ""
+		}
+		token := u[idx+len("hdnea="):]
+		if i := strings.IndexByte(token, '&'); i != -1 {
+			token = token[:i]
+		}
+		return token
+	}
+	hdnea := extractHdneaFromURL(result.Result)
+	if hdnea == "" {
+		hdnea = extractHdneaFromURL(result.Bitrates.Auto)
+	}
+	result.Hdnea = hdnea
+	return &result, nil
+}

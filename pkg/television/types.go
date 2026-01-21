@@ -19,13 +19,15 @@ type Television struct {
 
 // Channel represents Individual channel details from JioTV API
 type Channel struct {
-	ID       string `json:"channel_id"`
-	Name     string `json:"channel_name"`
-	URL      string `json:"channel_url"`
-	LogoURL  string `json:"logoUrl"`
-	Category int    `json:"channelCategoryId"`
-	Language int    `json:"channelLanguageId"`
-	IsHD     bool   `json:"isHD"`
+	ID                 string `json:"channel_id"`
+	Name               string `json:"channel_name"`
+	URL                string `json:"channel_url"`
+	LogoURL            string `json:"logoUrl"`
+	Category           int    `json:"channelCategoryId"`
+	Language           int    `json:"channelLanguageId"`
+	IsHD               bool   `json:"isHD"`
+	IsCatchupAvailable bool   `json:"isCatchupAvailable"`
+	IsCustom           bool   `json:"-"`
 }
 
 // UnmarshalJSON to Override Channel.ID to convert int from json to string
