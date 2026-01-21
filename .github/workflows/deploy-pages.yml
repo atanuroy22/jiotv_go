@@ -1,13 +1,7 @@
 name: GitHub Pages
 on:
   push:
-    branches:
-      - main
-    paths:
-      - docs/**
-      - scripts/install.sh
-      - scripts/install.ps1
-      - .github/workflows/deploy-pages.yml
+    branches: [ main, master, develop ]
   workflow_dispatch:
 
 permissions:
