@@ -7,16 +7,48 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 )
 
-var cache *expirable.LRU[string, string]
+type ttlEntry struct {
+	val     string
+	expires time.Time
+}
+
+type ttlCache struct {
+	items map[string]ttlEntry
+	ttl   time.Duration
+}
+
+func newTTLCache(ttl time.Duration) *ttlCache {
+	return &ttlCache{
+		items: make(map[string]ttlEntry),
+		ttl:   ttl,
+	}
+}
+
+func (c *ttlCache) Get(key string) (string, bool) {
+	e, ok := c.items[key]
+	if !ok {
+		return "", false
+	}
+	if time.Now().After(e.expires) {
+		delete(c.items, key)
+		return "", false
+	}
+	return e.val, true
+}
+
+func (c *ttlCache) Set(key, val string) {
+	c.items[key] = ttlEntry{val: val, expires: time.Now().Add(c.ttl)}
+}
 
 func init() {
-	cache = expirable.NewLRU[string, string](50, nil, time.Second*3600)
+	cookieCache = newTTLCache(time.Hour)
 }
+
+var cookieCache *ttlCache
 
 type ChannelItem struct {
 	ID       string `json:"id"`
@@ -67,7 +99,7 @@ func LiveHandler(c *fiber.Ctx) error {
 		return c.SendString("Channel not found")
 	}
 	uaHash := getMD5Hash(USER_AGENT)
-	cookie, found := cache.Get(uaHash)
+	cookie, found := cookieCache.Get(uaHash)
 	if !found {
 		cookieMap, err := generateCookieZee5(USER_AGENT)
 		if err != nil {
@@ -75,7 +107,7 @@ func LiveHandler(c *fiber.Ctx) error {
 			return err
 		}
 		cookie = cookieMap["cookie"]
-		cache.Add(uaHash, cookie)
+		cookieCache.Set(uaHash, cookie)
 	}
 	hostURL := c.BaseURL()
 	quality := c.Query("q")
