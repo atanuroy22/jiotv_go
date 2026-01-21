@@ -31,10 +31,22 @@ jobs:
           mkdir mdbook
           curl -sSL $url | tar -xz --directory=./mdbook
           echo `pwd`/mdbook >> $GITHUB_PATH
+      
+      - name: Prepopulate docs install scripts
+        run: |
+          rm -f docs/install.sh docs/install.ps1 || true
+          cp -f --remove-destination scripts/install.sh docs/install.sh
+          cp -f --remove-destination scripts/install.ps1 docs/install.ps1
 
       - name: Build Book
         run: |
           mdbook build docs
+      
+      - name: Prepare site
+        run: |
+          cp scripts/install.sh docs/book/install.sh
+          cp scripts/install.ps1 docs/book/install.ps1
+          touch docs/book/.nojekyll
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/pages-action@v1
