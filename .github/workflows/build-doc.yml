@@ -24,6 +24,10 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: mdbook@latest
+      - name: Prepopulate docs install scripts
+        run: |
+          cp scripts/install.sh docs/install.sh
+          cp scripts/install.ps1 docs/install.ps1
 
       - name: Build Book
         run: |
