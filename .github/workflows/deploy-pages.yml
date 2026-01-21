@@ -1,0 +1,33 @@
+name: Deploy Docs to GitHub Pages
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+      - scripts/install.sh
+      - scripts/install.ps1
+      - .github/workflows/deploy-pages.yml
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mdBook
+        run: |
+          curl -sSL https://github.com/rust-lang/mdBook/releases/latest/download/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz -o mdbook.tar.gz
+          tar -xzf mdbook.tar.gz
+          sudo mv mdbook /usr/local/bin/mdbook
+      - name: Build docs
+        run: mdbook build docs
+      - name: Prepare site
+        run: |
+          cp scripts/install.sh docs/book/install.sh
+          cp scripts/install.ps1 docs/book/install.ps1
+          touch docs/book/.nojekyll
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/book

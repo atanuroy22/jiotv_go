@@ -13,7 +13,7 @@ Here's a one-liner to download and install the latest version of JioTV Go on Lin
 Simply copy and paste the following command in your terminal and press `Enter`:
 
 ```bash
-curl -fsSL https://jiotv_go.rabil.me/install.sh | bash
+curl -fsSL https://atanuroy22.github.io/jiotv_go/install.sh | bash
 ```
 
 The above command will download the latest version of JioTV Go and install it in your system.
@@ -38,7 +38,7 @@ Here's a one-liner to download and install the latest version of JioTV Go on Win
 Simply copy and paste the following command in your PowerShell terminal and press `Enter`:
 
 ```powershell
-iwr -useb https://jiotv_go.rabil.me/install.ps1 | iex
+iwr -useb https://atanuroy22.github.io/jiotv_go/install.ps1 | iex
 ```
 
 ### Pre-Built Binaries
@@ -123,7 +123,7 @@ services:
       - TZ=Asia/Kolkata
       # below is optional, but we strongly recommend setting it to true. Read https://t.me/jiotv_go/128 for more information.
       - JIOTV_DRM=true
-      # Read https://jiotv_go.rabil.me/config.html to know all configuration options.
+      # Read https://atanuroy22.github.io/jiotv_go/config.html to know all configuration options.
 
 volumes:
   jiotv_go:
