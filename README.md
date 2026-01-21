@@ -50,7 +50,7 @@ The complete documentation for JioTV Go is available at https://atanuroy22.githu
 
 - [Announcement Channel (`jiotv_go`)](https://telegram.me/jiotv_go)
 - [Support Group (`jiotv_go_chat`)](https://telegram.me/jiotv_go_chat)
-
+<!-- 
 ## Star History
 
 <a href="https://star-history.com/#atanuroy22/jiotv_go&Date">
@@ -59,11 +59,11 @@ The complete documentation for JioTV Go is available at https://atanuroy22.githu
     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=atanuroy22/jiotv_go&type=Date" />
     <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=atanuroy22/jiotv_go&type=Date" />
   </picture>
-</a>
+</a> -->
 
-## Contributors
+<!-- ## Contributors
 
-[![Contributors](https://contributors-img.web.app/image?repo=atanuroy22/jiotv_go)](https://github.com/atanuroy22/jiotv_go/graphs/contributors)
+[![Contributors](https://contributors-img.web.app/image?repo=atanuroy22/jiotv_go)](https://github.com/atanuroy22/jiotv_go/graphs/contributors) -->
 
 ## Let's Make JioTV Go Better Together! 🤝
 
@@ -75,6 +75,3 @@ Found a pesky bug? No worries! Please help us improve JioTV Go by creating an is
 
 We wholeheartedly welcome your contributions. If you have ideas, fixes, or enhancements in mind, don't hesitate to create a pull request with your changes. For significant alterations, start by creating an issue to discuss your plans with us. Together, we can make JioTV Go even more incredible.
 
-## **License: Attribution 4.0 International (CC BY 4.0)**
-
-**Embrace the Spirit of Free Software!** JioTV Go is open-source and free to use. We're committed to keeping it accessible to everyone. If you come across any unauthorized attempts to sell this project, please report them to [me](mailto:mail@rabil.me) so we can take swift action. Your support is essential in safeguarding our project's values. 🙌📜💼
