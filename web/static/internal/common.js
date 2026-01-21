@@ -96,6 +96,18 @@ function updateCatchupUI() {
   }
   applyCatchupToCards();
   styleCatchupCards();
+  const path = window.location.pathname;
+  const match = path.match(/^\/(play|catchup)\/([^/?#]+)/);
+  if (match) {
+    const id = match[2];
+    const params = getCurrentUrlParams();
+    const qs = params.toString();
+    const base = enabled ? "/catchup/" : "/play/";
+    const target = base + id + (qs ? "?" + qs : "");
+    if ((enabled && match[1] !== "catchup") || (!enabled && match[1] !== "play")) {
+      window.location.replace(target);
+    }
+  }
 }
 function toggleCatchupMode() {
   const btn = document.getElementById("catchup-toggle");
