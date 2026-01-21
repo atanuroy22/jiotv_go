@@ -3,7 +3,7 @@ name: Build MdBook Documentation
 on:
   push:
     branches:
-      - main
+      - develop
     paths:
       - 'docs/**'
       # as docs have symbolic links to the scripts folder, we need to include it

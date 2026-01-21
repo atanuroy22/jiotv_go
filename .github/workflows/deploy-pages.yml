@@ -41,6 +41,7 @@ jobs:
         with:
           path: docs/book
   deploy:
+    if: github.ref_name == 'develop'
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
