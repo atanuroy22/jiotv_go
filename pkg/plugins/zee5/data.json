@@ -1,0 +1,214 @@
+{
+  "title": "Zee5",
+  "data": [
+    {
+      "id": "0-9-zeetamilapachd",
+      "slug": "zee-tamil-apac-hd",
+      "name": "Zee Tamil APAC HD",
+      "country": "SG",
+      "chno": "073",
+      "language": 8,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeetamilapachd/list/1920x1080listef67d9a80c9345bdb8254aa042944e0b7ad5084c9f924e2f8b42e4bd7b673fde.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5live-cf.zee5.com/out/v1/ZEE5_Live_Channels/Zee-Tamil-APAC-HD/index/index.m3u8"
+    },
+    {
+      "id": "0-9-zeetvapac",
+      "slug": "zee-tv-apac-hd",
+      "name": "Zee TV APAC HD",
+      "country": "SG",
+      "chno": "074",
+      "language": 1,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeetvapac/list/1920x1080list9d19430d882842cdb42aef55e83e2010.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2105535/ZEETVAPACHDELE/index.m3u8"
+    },
+    {
+      "id": "0-9-zeecinemaintl",
+      "slug": "zee-cinema-me",
+      "name": "Zee Cinema ME",
+      "country": "SG",
+      "chno": "075",
+      "language": 1,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeecinemaintl/list/1920x1080listb14aad0d90b644e8ba27a9d15842fe9c.jpg",
+      "genre": "Movie",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2105551/ZeeCinemaMEELE/master.m3u8"
+    },
+    {
+      "id": "0-9-channel_926372368",
+      "slug": "zee-marathi-usa",
+      "name": "Zee Marathi USA",
+      "country": "SG",
+      "chno": "076",
+      "language": 2,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-channel_926372368/list/1920x1080list77f6a2a9e7dc4fb7bc152faad4e16f34.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2104968/ZeeMarathiUSAELE/master.m3u8"
+    },
+    {
+      "id": "0-9-zeebioskop",
+      "slug": "zee-bioskop",
+      "name": "Zee Bioskop",
+      "country": "SG",
+      "chno": "077",
+      "language": 18,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeebioskop/list/1920x1080list5409a17e022443fbb70d5e3d0d4ec9f2.jpg",
+      "genre": "Movie",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2105175/ZeeBioskopIndonesiaELE/master.m3u8"
+    },
+    {
+      "id": "0-9-tvme",
+      "slug": "zee-tv-me",
+      "name": "Zee TV ME",
+      "country": "AE",
+      "chno": "078",
+      "language": 1,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-tvme/list/1920x1080listbae3c1818b08472fa49e231c7a98cc78.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5live-cf.zee5.com/out/v1/ZEE5_Live_Channels/Zee-TV-ME-HD/index/index.m3u8"
+    },
+    {
+      "id": "0-9-422",
+      "slug": "zee-keralam-me",
+      "name": "Zee Keralam ME",
+      "country": "AE",
+      "chno": "079",
+      "language": 7,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-422/list/1920x1080list2f9391fdcffa475a85f71c0cd692d5c6.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2105546/ZeeKeralamMEELE/master.m3u8"
+    },
+    {
+      "id": "0-9-zeealwan",
+      "slug": "zee-alwan",
+      "name": "Zee Alwan",
+      "country": "AE",
+      "chno": "080",
+      "language": 4,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeealwan/list/zeealwanpfthumbnail1920x1080d29cc3acf6a5414893eeceb9009aa030.jpg",
+      "genre": "Entertainment",
+      "url": "https://z5ak-cmaflive.zee5.com/cmaf/live/2105538/Z-Alwan-SD/master.m3u8"
+    },
+    {
+      "id": "0-9-zeeaflam",
+      "slug": "zee-aflam",
+      "name": "Zee Aflam",
+      "country": "AE",
+      "chno": "081",
+      "language": 4,
+      "logo": "https://akamaividz2.zee5.com/image/upload/w_auto,h_396,c_scale,f_webp,q_auto:eco/resources/0-9-zeeaflam/list/zeeaflampfthumbnail1920x108094e49cea51934c7d9afe7bc68f9257e7.jpg",
+      "genre": "Movie",
+      "url": "https://z5live-cf.zee5.com/out/v1/ZEE5_Live_Channels/Z-Aflam-SD/master/master.m3u8"
+    },
+    {
+      "id": "0-9-9z5398768",
+      "slug": "aastha-telugu",
+      "name": "Aastha Telugu",
+      "country": "IN",
+      "chno": "082",
+      "language": 11,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/iilpuo.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthatelugu.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398770",
+      "slug": "aastha-tamil",
+      "name": "Aastha Tamil",
+      "country": "IN",
+      "chno": "083",
+      "language": 8,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/vwnnbv.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthatamil.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398771",
+      "slug": "aastha-kannada",
+      "name": "Aastha Kannada",
+      "country": "IN",
+      "chno": "084",
+      "language": 13,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/ndgvsw.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthakannada.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398791",
+      "slug": "aastha-gujarati",
+      "name": "Aastha Gujarati",
+      "country": "IN",
+      "chno": "085",
+      "language": 9,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/pqeztp.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthagujrati.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398792",
+      "slug": "dharm-sandesh",
+      "name": "Dharm Sandesh",
+      "country": "IN",
+      "chno": "086",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/oognna.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:arihant.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398793",
+      "slug": "aastha-bhajan",
+      "name": "Aastha Bhajan",
+      "country": "IN",
+      "chno": "087",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/cbgzfa.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:bhajan.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398761",
+      "slug": "aastha",
+      "name": "Aastha",
+      "country": "IN",
+      "chno": "088",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/ycbqly.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthatv.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398762",
+      "slug": "aastha-prime",
+      "name": "Aastha Prime",
+      "country": "IN",
+      "chno": "089",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/txbmsf.png",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthaprime1.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398763",
+      "slug": "aastha-uk",
+      "name": "Aastha UK",
+      "country": "GB",
+      "chno": "090",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/jkkdzm.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthauk.smil/playlist.m3u8"
+    },
+    {
+      "id": "0-9-9z5398764",
+      "slug": "aastha-usa",
+      "name": "Aastha USA",
+      "country": "US",
+      "chno": "091",
+      "language": 1,
+      "logo": "https://d229kpbsb5jevy.cloudfront.net/aastha/320/280/content/common/channel/logos/etsrwx.jpeg",
+      "genre": "Devotional",
+      "url": "https://aasthaott.akamaized.net/110923/smil:aasthausa.smil/playlist.m3u8"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
@@ -516,7 +517,12 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		// Create an M3U playlist
 		m3uContent := "#EXTM3U x-tvg-url=\"" + hostURL + "/epg.xml.gz\"\n"
 		logoURL := hostURL + "/jtvimage"
-		for _, channel := range apiResponse.Result {
+		allChannels := apiResponse.Result
+		zee5Channels := zee5.GetChannels()
+		if len(zee5Channels) > 0 {
+			allChannels = append(allChannels, zee5Channels...)
+		}
+		for _, channel := range allChannels {
 
 			if languages != "" && !utils.ContainsString(television.LanguageMap[channel.Language], strings.Split(languages, ",")) {
 				continue
@@ -527,10 +533,18 @@ func ChannelsHandler(c *fiber.Ctx) error {
 			}
 
 			var channelURL string
-			if quality != "" {
-				channelURL = fmt.Sprintf("%s/live/%s/%s.m3u8", hostURL, quality, channel.ID)
+			if channel.IsCustom && channel.URL != "" {
+				if quality != "" {
+					channelURL = fmt.Sprintf("%s/%s?q=%s", hostURL, channel.URL, quality)
+				} else {
+					channelURL = fmt.Sprintf("%s/%s", hostURL, channel.URL)
+				}
 			} else {
-				channelURL = fmt.Sprintf("%s/live/%s.m3u8", hostURL, channel.ID)
+				if quality != "" {
+					channelURL = fmt.Sprintf("%s/live/%s/%s.m3u8", hostURL, quality, channel.ID)
+				} else {
+					channelURL = fmt.Sprintf("%s/live/%s.m3u8", hostURL, channel.ID)
+				}
 			}
 			var channelLogoURL string
 			if strings.HasPrefix(channel.LogoURL, "http://") || strings.HasPrefix(channel.LogoURL, "https://") {
@@ -559,9 +573,16 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		return c.SendStream(strings.NewReader(m3uContent))
 	}
 
-	for i, channel := range apiResponse.Result {
-		apiResponse.Result[i].URL = fmt.Sprintf("%s/live/%s", hostURL, channel.ID)
-	}
+		for i, channel := range apiResponse.Result {
+			apiResponse.Result[i].URL = fmt.Sprintf("%s/play/%s", hostURL, channel.ID)
+		}
+		zee5Channels := zee5.GetChannels()
+		if len(zee5Channels) > 0 {
+			for _, ch := range zee5Channels {
+				ch.URL = fmt.Sprintf("%s/%s", hostURL, ch.URL)
+				apiResponse.Result = append(apiResponse.Result, ch)
+			}
+		}
 
 	return c.JSON(apiResponse)
 }
@@ -571,6 +592,27 @@ func ChannelsHandler(c *fiber.Ctx) error {
 func PlayHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
 	quality := c.Query("q")
+
+	if isCustomChannel(id) {
+		player_url := "/player/" + id + "?q=" + quality
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/play", fiber.Map{
+			"Title":      Title,
+			"player_url": player_url,
+			"ChannelID":  id,
+		})
+	}
+
+	_, numErr := strconv.Atoi(id)
+	if numErr != nil {
+		player_url := "/zee5/" + id + "?q=" + quality
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/play", fiber.Map{
+			"Title":      Title,
+			"player_url": player_url,
+			"ChannelID":  id,
+		})
+	}
 
 	// Ensure tokens are fresh before making API call for DRM channels
 	if err := EnsureFreshTokens(); err != nil {

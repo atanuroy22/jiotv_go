@@ -1,23 +1,21 @@
-name: Build MdBook Documentation
-
+name: GitHub Pages
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'docs/**'
-      # as docs have symbolic links to the scripts folder, we need to include it
-      - 'scripts/**'
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
-  run:
+  build:
     runs-on: ubuntu-latest
-    concurrency:
-      group: "pages"
-      cancel-in-progress: true
-    permissions:
-      pages: write      # to deploy to Pages
-      id-token: write   # to verify the deployment originates from an appropriate source
     steps:
       - uses: actions/checkout@v4
       - name: Install mdBook
@@ -29,24 +27,26 @@ jobs:
           rm -f docs/install.sh docs/install.ps1 || true
           cp -f --remove-destination scripts/install.sh docs/install.sh
           cp -f --remove-destination scripts/install.ps1 docs/install.ps1
-
-      - name: Build Book
-        run: |
-          mdbook build docs
+      - name: Build docs
+        run: mdbook build docs
       - name: Prepare site
         run: |
           cp scripts/install.sh docs/book/install.sh
           cp scripts/install.ps1 docs/book/install.ps1
           touch docs/book/.nojekyll
-
-      - name: Setup Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-      
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'docs/book'
-      
+          path: docs/book
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy
         uses: actions/deploy-pages@v4

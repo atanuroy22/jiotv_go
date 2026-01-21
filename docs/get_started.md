@@ -13,7 +13,7 @@ Here's a one-liner to download and install the latest version of JioTV Go on Lin
 Simply copy and paste the following command in your terminal and press `Enter`:
 
 ```bash
-curl -fsSL https://jiotv_go.rabil.me/install.sh | bash
+curl -fsSL https://atanuroy22.github.io/jiotv_go/install.sh | bash
 ```
 
 The above command will download the latest version of JioTV Go and install it in your system.
@@ -38,29 +38,29 @@ Here's a one-liner to download and install the latest version of JioTV Go on Win
 Simply copy and paste the following command in your PowerShell terminal and press `Enter`:
 
 ```powershell
-iwr -useb https://jiotv_go.rabil.me/install.ps1 | iex
+iwr -useb https://atanuroy22.github.io/jiotv_go/install.ps1 | iex
 ```
 
 ### Pre-Built Binaries
 
-You can also download the pre-built binaries for your platform from the [releases](https://github.com/JioTV-Go/jiotv-go/releases) page or click on `Binary Name` links in the table below.
+You can also download the pre-built binaries for your platform from the [releases](https://github.com/atanuroy22/jiotv_go/releases) page or click on `Binary Name` links in the table below.
 
 #### The following table lists the binaries available for download:
 
 | OS Name        | Architecture (AKA) | Binary Name                                                                                                            |
 | -------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Android        | arm64 (aarch64)    | [jiotv_go-android-arm64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-android-arm64)         |
-| Android        | amd64 (x86_64)     | [jiotv_go-android-amd64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-android-amd64)         |
-| Android        | arm                | [jiotv_go-android-arm](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-android-arm)             |
-| Linux          | arm64 (aarch64)    | [jiotv_go-linux-arm64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-linux-arm64)             |
-| Linux          | amd64 (x86_64)     | [jiotv_go-linux-amd64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-linux-amd64)             |
-| Linux          | arm                | [jiotv_go-linux-arm](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-linux-arm)                 |
-| Linux          | 386 (x86, i686)    | [jiotv_go-linux-386](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-linux-386)                 |
-| Windows        | 386 (x86, i686)    | [jiotv_go-windows-386.exe](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-windows-386.exe)     |
-| Windows        | amd64 (x86_64)     | [jiotv_go-windows-amd64.exe](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-windows-amd64.exe) |
-| Windows        | arm64 (aarch64)    | [jiotv_go-windows-arm64.exe](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-windows-arm64.exe) |
-| Darwin (macOS) | amd64 (x86_64)     | [jiotv_go-darwin-amd64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-darwin-amd64)           |
-| Darwin (macOS) | arm64 (aarch64)    | [jiotv_go-darwin-arm64](https://github.com/jiotv-go/jiotv_go/releases/latest/download/jiotv_go-darwin-arm64)           |
+| Android        | arm64 (aarch64)    | [jiotv_go-android-arm64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-android-arm64)         |
+| Android        | amd64 (x86_64)     | [jiotv_go-android-amd64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-android-amd64)         |
+| Android        | arm                | [jiotv_go-android-arm](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-android-arm)             |
+| Linux          | arm64 (aarch64)    | [jiotv_go-linux-arm64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-linux-arm64)             |
+| Linux          | amd64 (x86_64)     | [jiotv_go-linux-amd64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-linux-amd64)             |
+| Linux          | arm                | [jiotv_go-linux-arm](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-linux-arm)                 |
+| Linux          | 386 (x86, i686)    | [jiotv_go-linux-386](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-linux-386)                 |
+| Windows        | 386 (x86, i686)    | [jiotv_go-windows-386.exe](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-windows-386.exe)     |
+| Windows        | amd64 (x86_64)     | [jiotv_go-windows-amd64.exe](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-windows-amd64.exe) |
+| Windows        | arm64 (aarch64)    | [jiotv_go-windows-arm64.exe](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-windows-arm64.exe) |
+| Darwin (macOS) | amd64 (x86_64)     | [jiotv_go-darwin-amd64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-darwin-amd64)           |
+| Darwin (macOS) | arm64 (aarch64)    | [jiotv_go-darwin-arm64](https://github.com/atanuroy22/jiotv_go/releases/latest/download/jiotv_go-darwin-arm64)           |
 
 #### Identifying your OS and Architecture
 
@@ -105,7 +105,7 @@ Make sure you have [Docker](https://docs.docker.com/get-docker/) installed on yo
 For single command setup, run:
 
 ```sh
-docker run -p 5001:5001 -e TZ=Asia/Kolkata -e JIOTV_DRM=true -e JIOTV_PATH_PREFIX=/app/.jiotv_go -v jiotv_go:/app/.jiotv_go ghcr.io/jiotv-go/jiotv_go
+docker run -p 5001:5001 -e TZ=Asia/Kolkata -e JIOTV_DRM=true -e JIOTV_PATH_PREFIX=/app/.jiotv_go -v jiotv_go:/app/.jiotv_go ghcr.io/atanuroy22/jiotv_go
 ```
 
 If you prefer docker-compose, create a `docker-compose.yml` file with the following content:
@@ -113,7 +113,7 @@ If you prefer docker-compose, create a `docker-compose.yml` file with the follow
 ```yml
 services:
   jiotv_go:
-    image: ghcr.io/jiotv-go/jiotv_go
+    image: ghcr.io/atanuroy22/jiotv_go
     ports:
       - "5001:5001"
     volumes:
@@ -123,7 +123,7 @@ services:
       - TZ=Asia/Kolkata
       # below is optional, but we strongly recommend setting it to true. Read https://t.me/jiotv_go/128 for more information.
       - JIOTV_DRM=true
-      # Read https://jiotv_go.rabil.me/config.html to know all configuration options.
+      # Read https://atanuroy22.github.io/jiotv_go/config.html to know all configuration options.
 
 volumes:
   jiotv_go:
@@ -137,7 +137,7 @@ docker-compose up -d
 
 Open your web browser and visit [http://localhost:5001/](http://localhost:5001/).
 
-If you're impatient for new features, to get unstable build, use the `ghcr.io/jiotv-go/jiotv_go:develop` image.
+If you're impatient for new features, to get unstable build, use the `ghcr.io/atanuroy22/jiotv_go:develop` image.
 
 ### Using CLI Options with Docker
 
@@ -146,7 +146,7 @@ By default, JioTV Go Docker image runs with `serve --public` command. You can ov
 For example, to run JioTV Go with `serve --public --port 8080` command, run:
 
 ```sh
-docker run -p 8080:8080 -v jiotv_go:/app/secrets ghcr.io/jiotv-go/jiotv_go serve --public --port 8080
+docker run -p 8080:8080 -v jiotv_go:/app/secrets ghcr.io/atanuroy22/jiotv_go serve --public --port 8080
 ```
 
 ### Keep JioTV Go Updated
@@ -154,7 +154,7 @@ docker run -p 8080:8080 -v jiotv_go:/app/secrets ghcr.io/jiotv-go/jiotv_go serve
 To update to the latest version, run:
 
 ```sh
-docker pull ghcr.io/jiotv-go/jiotv_go:latest
+docker pull ghcr.io/atanuroy22/jiotv_go:latest
 ```
 
 ---
