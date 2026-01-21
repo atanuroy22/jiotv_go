@@ -48,8 +48,8 @@ The complete documentation for JioTV Go is available at https://atanuroy22.githu
 
 ## Join the community on Telegram:
 
-- [Announcement Channel (`jiotv_go`)](https://telegram.me/jiotv_go)
-- [Support Group (`jiotv_go_chat`)](https://telegram.me/jiotv_go_chat)
+<!-- - [Announcement Channel (`jiotv_go`)](https://telegram.me/jiotv_go) -->
+- [Support Group (`jiotv_go_chat`)](https://telegram.me/atanuroy2222)
 <!-- 
 ## Star History
 
