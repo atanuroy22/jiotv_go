@@ -12,13 +12,13 @@ Let's start by cloning the repository:
 
 **Linux/macOS:**
 ```bash
-git clone https://github.com/jiotv-go/jiotv_go.git
+git clone https://github.com/atanuroy22/jiotv_go.git
 cd jiotv_go
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone https://github.com/jiotv-go/jiotv_go.git
+git clone https://github.com/atanuroy22/jiotv_go.git
 cd jiotv_go
 ```
 
@@ -166,7 +166,7 @@ Now you have the flexibility to customize the look and feel of JioTV Go to match
 
 ### Report Bugs
 
-Found a pesky bug? No worries! Please help us improve JioTV Go by creating an issue [here](https://github.com/jiotv-go/jiotv_go/issues/new). Be sure to include detailed steps to reproduce the bug, describe the expected behavior, and, if possible, attach screenshots. Your feedback is invaluable!
+Found a pesky bug? No worries! Please help us improve JioTV Go by creating an issue [here](https://github.com/atanuroy22/jiotv_go/issues/new). Be sure to include detailed steps to reproduce the bug, describe the expected behavior, and, if possible, attach screenshots. Your feedback is invaluable!
 
 ### Ready to Contribute? Join the Journey!
 
