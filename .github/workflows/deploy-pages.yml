@@ -24,8 +24,9 @@ jobs:
           tool: mdbook@latest
       - name: Prepopulate docs install scripts
         run: |
-          cp scripts/install.sh docs/install.sh
-          cp scripts/install.ps1 docs/install.ps1
+          rm -f docs/install.sh docs/install.ps1 || true
+          cp -f --remove-destination scripts/install.sh docs/install.sh
+          cp -f --remove-destination scripts/install.ps1 docs/install.ps1
       - name: Build docs
         run: mdbook build docs
       - name: Prepare site
