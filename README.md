@@ -30,6 +30,7 @@ Get Started with JioTV Go by following the [Get Started](https://atanuroy22.gith
   <summary>Click to expand/collapse</summary>
   
 - [JioTV Go 📺](#jiotv-go-)
+  - [Project Attribution](#project-attribution)
   - [Features 🌟](#features-)
   - [Table of Contents](#table-of-contents)
   - [Documentation](#documentation)
@@ -67,6 +68,17 @@ The complete documentation for JioTV Go is available at https://atanuroy22.githu
 
 ## Let's Make JioTV Go Better Together! 🤝
 
+## Project Attribution
+
+This project is built upon and continues the work of the original JioTV Go by **Mohammed Rabil**, the creator of the pioneering repository:
+
+- Original Repository: [JioTV-Go/jiotv_go](https://github.com/JioTV-Go/jiotv_go)
+
+Following the discontinuation of the original project, this repository aims to respectfully continue **Mohammed Rabil’s legacy** while preserving the spirit and functionality of JioTV Go.
+
+- Licensing: We maintain all original licensing information and continue under the terms of the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license. See [LICENSE](./LICENSE) for full details.
+- Contributors: We acknowledge and thank all previous contributors to the original project. See the list of contributors here: [JioTV-Go/jiotv_go contributors](https://github.com/JioTV-Go/jiotv_go/graphs/contributors).
+- 
 ### **Report Bugs**
 
 Found a pesky bug? No worries! Please help us improve JioTV Go by creating an issue [here](https://github.com/atanuroy22/jiotv_go/issues/new/choose). Be sure to include detailed steps to reproduce the bug, describe the expected behavior, and, if possible, attach screenshots. Your feedback is invaluable!
