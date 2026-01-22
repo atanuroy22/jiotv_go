@@ -15,7 +15,7 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
-	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
+	// "github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
@@ -109,9 +109,10 @@ func IndexHandler(c *fiber.Ctx) error {
 		return ErrorMessageHandler(c, err)
 	}
 
-	if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
-		channels.Result = append(channels.Result, zee5Channels...)
-	}
+	// Zee5 channels disabled
+	// if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
+	// 	channels.Result = append(channels.Result, zee5Channels...)
+	// }
 
 	// Get language and category from query params
 	language := c.Query("language")
@@ -522,10 +523,10 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		m3uContent := "#EXTM3U x-tvg-url=\"" + hostURL + "/epg.xml.gz\"\n"
 		logoURL := hostURL + "/jtvimage"
 		allChannels := apiResponse.Result
-		zee5Channels := zee5.GetChannels()
-		if len(zee5Channels) > 0 {
-			allChannels = append(allChannels, zee5Channels...)
-		}
+		// zee5Channels := zee5.GetChannels()
+		// if len(zee5Channels) > 0 {
+		// 	allChannels = append(allChannels, zee5Channels...)
+		// }
 		for _, channel := range allChannels {
 
 			if languages != "" && !utils.ContainsString(television.LanguageMap[channel.Language], strings.Split(languages, ",")) {
@@ -580,13 +581,14 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		for i, channel := range apiResponse.Result {
 			apiResponse.Result[i].URL = fmt.Sprintf("%s/play/%s", hostURL, channel.ID)
 		}
-		zee5Channels := zee5.GetChannels()
-		if len(zee5Channels) > 0 {
-			for _, ch := range zee5Channels {
-				ch.URL = fmt.Sprintf("%s/%s", hostURL, ch.URL)
-				apiResponse.Result = append(apiResponse.Result, ch)
-			}
-		}
+		// Zee5 channels disabled
+		// zee5Channels := zee5.GetChannels()
+		// if len(zee5Channels) > 0 {
+		// 	for _, ch := range zee5Channels {
+		// 		ch.URL = fmt.Sprintf("%s/%s", hostURL, ch.URL)
+		// 		apiResponse.Result = append(apiResponse.Result, ch)
+		// 	}
+		// }
 
 	return c.JSON(apiResponse)
 }
@@ -607,16 +609,17 @@ func PlayHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	_, numErr := strconv.Atoi(id)
-	if numErr != nil {
-		player_url := "/zee5/" + id + "?q=" + quality
-		internalUtils.SetCacheHeader(c, 3600)
-		return c.Render("views/play", fiber.Map{
-			"Title":      Title,
-			"player_url": player_url,
-			"ChannelID":  id,
-		})
-	}
+	// Disable Zee5 play path fallback
+	// _, numErr := strconv.Atoi(id)
+	// if numErr != nil {
+	// 	player_url := "/zee5/" + id + "?q=" + quality
+	// 	internalUtils.SetCacheHeader(c, 3600)
+	// 	return c.Render("views/play", fiber.Map{
+	// 		"Title":      Title,
+	// 		"player_url": player_url,
+	// 		"ChannelID":  id,
+	// 	})
+	// }
 
 	// Ensure tokens are fresh before making API call for DRM channels
 	if err := EnsureFreshTokens(); err != nil {
