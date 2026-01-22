@@ -109,6 +109,10 @@ func IndexHandler(c *fiber.Ctx) error {
 		return ErrorMessageHandler(c, err)
 	}
 
+	if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
+		channels.Result = append(channels.Result, zee5Channels...)
+	}
+
 	// Get language and category from query params
 	language := c.Query("language")
 	category := c.Query("category")
