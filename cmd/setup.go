@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 )
@@ -118,40 +120,162 @@ func SetupEnvironment() error {
 	return nil
 }
 
-func downloadFile(url, filepath string) error {
-	resp, err := http.Get(url)
+var setupHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+func downloadFile(urlStr, filePath string) error {
+	var lastErr error
+	for _, candidate := range fallbackURLs(urlStr) {
+		if err := downloadFileOnce(candidate, filePath); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidate URLs")
+	}
+	return lastErr
+}
+
+func downloadFileOnce(urlStr, filePath string) error {
+	resp, err := httpGetOK(urlStr)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-
-	out, err := os.Create(filepath)
+	tmpPath := filePath + ".tmp"
+	out, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	_, err = io.Copy(out, resp.Body)
-	return err
+	_, copyErr := io.Copy(out, resp.Body)
+	closeErr := out.Close()
+
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return closeErr
+	}
+
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
-func fetchAndParseM3U(url string) ([]television.CustomChannel, error) {
-	resp, err := http.Get(url)
+func fetchAndParseM3U(urlStr string) ([]television.CustomChannel, error) {
+	var lastErr error
+	for _, candidate := range fallbackURLs(urlStr) {
+		resp, err := httpGetOK(candidate)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		channels, parseErr := parseM3U(resp.Body)
+		_ = resp.Body.Close()
+		if parseErr != nil {
+			lastErr = parseErr
+			continue
+		}
+
+		return channels, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidate URLs")
+	}
+	return nil, lastErr
+}
+
+func httpGetOK(urlStr string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	req.Header.Set("User-Agent", "jiotv_go")
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bad status: %s", resp.Status)
+	resp, err := setupHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("bad status: %s", resp.Status)
+	}
+	return resp, nil
+}
+
+func fallbackURLs(urlStr string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+
+	add := func(u string) {
+		if u == "" {
+			return
+		}
+		if _, ok := seen[u]; ok {
+			return
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+	}
+
+	add(urlStr)
+	add(jsDelivrFallback(urlStr))
+	return out
+}
+
+func jsDelivrFallback(urlStr string) string {
+	parsed, err := url.Parse(urlStr)
+	if err != nil {
+		return ""
+	}
+
+	switch parsed.Host {
+	case "raw.githubusercontent.com":
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) < 4 {
+			return ""
+		}
+		owner, repo, ref := parts[0], parts[1], parts[2]
+		rest := strings.Join(parts[3:], "/")
+		if owner == "" || repo == "" || ref == "" || rest == "" {
+			return ""
+		}
+		return fmt.Sprintf("https://cdn.jsdelivr.net/gh/%s/%s@%s/%s", owner, repo, ref, rest)
+	default:
+		if !strings.HasSuffix(parsed.Host, ".github.io") {
+			return ""
+		}
+		if strings.HasPrefix(parsed.Host, "cdn.jsdelivr.net") || strings.HasSuffix(parsed.Host, "jsdelivr.net") {
+			return ""
+		}
+		owner := strings.TrimSuffix(parsed.Host, ".github.io")
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) < 2 {
+			return ""
+		}
+		repo := parts[0]
+		rest := strings.Join(parts[1:], "/")
+		if owner == "" || repo == "" || rest == "" {
+			return ""
+		}
+		return fmt.Sprintf("https://cdn.jsdelivr.net/gh/%s/%s@gh-pages/%s", owner, repo, rest)
+	}
+}
+
+func parseM3U(r io.Reader) ([]television.CustomChannel, error) {
+
 	var channels []television.CustomChannel
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var currentChannel television.CustomChannel

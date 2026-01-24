@@ -19,7 +19,7 @@ disable_logout = true
 disable_url_encryption = false
 
 # Title of the webpage
-title = "Jio"
+title = "Jio+"
 
 # Log to Stdout
 log_to_stdout = true
