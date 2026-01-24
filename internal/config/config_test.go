@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -126,23 +127,17 @@ func TestJioTVConfig_Get(t *testing.T) {
 }
 
 func TestCommonFileExists(t *testing.T) {
-	// Create a temp file to simulate a config file
-	tmpFile, err := os.CreateTemp("", "jiotv_go.yml")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	// Save current working directory and change to temp dir
+	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	tmpDir := os.TempDir()
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
 	defer os.Chdir(origDir)
 
-	// Rename temp file to match a common config name
-	testFile := "jiotv_go.yml"
-	os.Rename(tmpFile.Name(), testFile)
-	defer os.Remove(testFile)
+	testFile := filepath.Join(tmpDir, "jiotv_go.yml")
+	if err := os.WriteFile(testFile, []byte("epg: true\n"), 0644); err != nil {
+		t.Fatalf("failed to create test config: %v", err)
+	}
 
 	tests := []struct {
 		name string
@@ -160,7 +155,7 @@ func TestCommonFileExists(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if i == 1 {
-				os.Remove("jiotv_go.yml")
+				_ = os.Remove(testFile)
 			}
 			got := commonFileExists()
 			if got != tt.want {

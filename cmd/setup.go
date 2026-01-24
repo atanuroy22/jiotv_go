@@ -21,8 +21,7 @@ const (
 	JioTVGoTomlURL  = BaseURL + "/configs/jiotv_go.toml"
 	CustomChJSONURL = BaseURL + "/configs/custom-channels.json"
 
-	SonyM3UURL = "https://atanuroy22.github.io/iptv/output/sony.m3u"
-	StarM3UURL = "https://atanuroy22.github.io/iptv/output/star.m3u"
+	AllM3UURL = "https://atanuroy22.github.io/iptv/output/all.m3u"
 
 	ConfigDir = "configs"
 )
@@ -79,37 +78,43 @@ func SetupEnvironment() error {
 		return fmt.Errorf("failed to parse custom-channels.json: %w", err)
 	}
 
-	// 4. Fetch and parse M3U files
-	m3uURLs := []string{SonyM3UURL, StarM3UURL}
-	var newChannels []television.CustomChannel
-
-	for _, url := range m3uURLs {
-		fmt.Printf("INFO: Fetching channels from %s...\n", url)
-		channels, err := fetchAndParseM3U(url)
-		if err != nil {
-			fmt.Printf("WARN: Failed to fetch/parse M3U from %s: %v\n", url, err)
-			continue
-		}
-		newChannels = append(newChannels, channels...)
+	fmt.Printf("INFO: Fetching channels from %s...\n", AllM3UURL)
+	newChannels, err := fetchAndParseM3U(AllM3UURL)
+	if err != nil {
+		return fmt.Errorf("failed to fetch/parse M3U from %s: %w", AllM3UURL, err)
 	}
 
-	// 5. Add new channels to customChannels
-	// The user said "clean old once". Since we just downloaded a fresh custom-channels.json,
-	// it only contains the default channels from the repo (if any).
-	// We append the new M3U channels to this.
-	customChannels.Channels = append(customChannels.Channels, newChannels...)
+	existingIDs := make(map[string]struct{}, len(customChannels.Channels))
+	for _, ch := range customChannels.Channels {
+		existingIDs[ch.ID] = struct{}{}
+	}
 
-	// 6. Save updated custom-channels.json
+	var addedCount int
+	for _, ch := range newChannels {
+		if _, ok := existingIDs[ch.ID]; ok {
+			continue
+		}
+		customChannels.Channels = append(customChannels.Channels, ch)
+		existingIDs[ch.ID] = struct{}{}
+		addedCount++
+	}
+
 	updatedData, err := json.MarshalIndent(customChannels, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal updated custom channels: %w", err)
 	}
 
-	if err := os.WriteFile(customChPath, updatedData, 0644); err != nil {
+	tmpCustomChPath := customChPath + ".tmp"
+	if err := os.WriteFile(tmpCustomChPath, updatedData, 0644); err != nil {
 		return fmt.Errorf("failed to write updated custom-channels.json: %w", err)
 	}
 
-	fmt.Printf("INFO: Environment setup complete. Added %d channels.\n", len(newChannels))
+	if err := os.Rename(tmpCustomChPath, customChPath); err != nil {
+		_ = os.Remove(tmpCustomChPath)
+		return fmt.Errorf("failed to replace custom-channels.json: %w", err)
+	}
+
+	fmt.Printf("INFO: Environment setup complete. Added %d channels.\n", addedCount)
 	return nil
 }
 
@@ -147,6 +152,7 @@ func fetchAndParseM3U(url string) ([]television.CustomChannel, error) {
 
 	var channels []television.CustomChannel
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var currentChannel television.CustomChannel
 	isInfoLine := false
@@ -162,7 +168,7 @@ func fetchAndParseM3U(url string) ([]television.CustomChannel, error) {
 			currentChannel = television.CustomChannel{}
 			// Parse metadata
 			// Example: #EXTINF:-1 tvg-id="Sony_HD" tvg-logo="http://..." group-title="Entertainment",Sony HD
-			
+
 			// Extract Name (after last comma)
 			lastCommaIdx := strings.LastIndex(line, ",")
 			if lastCommaIdx != -1 {
@@ -179,20 +185,24 @@ func fetchAndParseM3U(url string) ([]television.CustomChannel, error) {
 				id = strings.ReplaceAll(strings.ToLower(currentChannel.Name), " ", "_")
 			}
 			currentChannel.ID = id
-			
+
 			// Map Category (simple mapping or default)
 			// group-title="Entertainment"
 			groupTitle := extractAttribute(line, "group-title")
 			currentChannel.Category = mapCategory(groupTitle)
-			
-			// Set defaults
-			currentChannel.Language = 6 // Default to something? Or maybe 0.
-			currentChannel.IsHD = true // Assume HD or check name?
 
+			// Set defaults
+			currentChannel.Language = mapLanguage(extractAttribute(line, "tvg-language"))
+			currentChannel.IsHD = strings.Contains(strings.ToUpper(currentChannel.Name), "HD")
+
+		} else if strings.HasPrefix(line, "#") && isInfoLine {
+			continue
 		} else if !strings.HasPrefix(line, "#") && isInfoLine {
 			// This is the URL line
 			currentChannel.URL = line
-			channels = append(channels, currentChannel)
+			if strings.HasPrefix(strings.ToLower(currentChannel.URL), "https://") {
+				channels = append(channels, currentChannel)
+			}
 			isInfoLine = false
 		}
 	}
@@ -220,7 +230,7 @@ func extractAttribute(line, key string) string {
 
 func mapCategory(group string) int {
 	// Simple mapping based on known categories in pkg/television/types.go
-	// 5: "Entertainment", 6: "Movies", 7: "Kids", 8: "Sports", 
+	// 5: "Entertainment", 6: "Movies", 7: "Kids", 8: "Sports",
 	group = strings.ToLower(group)
 	if strings.Contains(group, "entertainment") {
 		return 5
@@ -242,5 +252,47 @@ func mapCategory(group string) int {
 }
 
 func GetConfigDir() string {
-    return ConfigDir
+	return ConfigDir
+}
+
+func mapLanguage(lang string) int {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	switch lang {
+	case "hindi":
+		return 1
+	case "marathi":
+		return 2
+	case "punjabi":
+		return 3
+	case "urdu":
+		return 4
+	case "bengali":
+		return 5
+	case "english":
+		return 6
+	case "malayalam":
+		return 7
+	case "tamil":
+		return 8
+	case "gujarati":
+		return 9
+	case "odia", "oriya":
+		return 10
+	case "telugu":
+		return 11
+	case "bhojpuri":
+		return 12
+	case "kannada":
+		return 13
+	case "assamese":
+		return 14
+	case "nepali":
+		return 15
+	case "french":
+		return 16
+	case "":
+		return 0
+	default:
+		return 18
+	}
 }

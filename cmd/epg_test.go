@@ -20,9 +20,11 @@ func TestGenEPG(t *testing.T) {
 	// We will assume epg.GenXMLGz is tested in its own package.
 
 	// Let's create a dummy epg.xml.gz to test the deletion part of GenEPG.
-	if _, err := os.Create("epg.xml.gz"); err != nil {
+	f, err := os.Create("epg.xml.gz")
+	if err != nil {
 		t.Fatalf("Failed to create dummy epg.xml.gz: %v", err)
 	}
+	_ = f.Close()
 
 	// The function should first delete the existing file.
 	// Since we can't easily check for deletion and then successful generation
@@ -43,9 +45,11 @@ func TestDeleteEPG(t *testing.T) {
 	}
 
 	// Case 2: File exists
-	if _, err := os.Create("epg.xml.gz"); err != nil {
+	f, err := os.Create("epg.xml.gz")
+	if err != nil {
 		t.Fatalf("Failed to create dummy epg.xml.gz: %v", err)
 	}
+	_ = f.Close()
 	if err := DeleteEPG(); err != nil {
 		t.Errorf("DeleteEPG() with existing file should not return error, but got: %v", err)
 	}
