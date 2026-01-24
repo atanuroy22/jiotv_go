@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -82,10 +83,28 @@ func (*JioTVConfig) Get(key string) interface{} {
 // If no file is found, an empty string is returned.
 func commonFileExists() string {
 	commonFiles := []string{"jiotv_go.yml", "jiotv_go.yaml", "jiotv_go.toml", "jiotv_go.json", "config.json", "config.yml", "config.toml", "config.yaml"}
+	
+	exePath, _ := os.Executable()
+	exeDir := filepath.Dir(exePath)
+
 	for _, filename := range commonFiles {
 		// check above common files in current directory
 		if _, err := os.Stat(filename); err == nil {
 			return filename
+		}
+		// check in configs directory
+		if _, err := os.Stat("configs/" + filename); err == nil {
+			return "configs/" + filename
+		}
+		// check in executable directory
+		exeFile := filepath.Join(exeDir, filename)
+		if _, err := os.Stat(exeFile); err == nil {
+			return exeFile
+		}
+		// check in executable directory configs
+		exeConfigFile := filepath.Join(exeDir, "configs", filename)
+		if _, err := os.Stat(exeConfigFile); err == nil {
+			return exeConfigFile
 		}
 	}
 	return ""
