@@ -60,15 +60,21 @@ func SetupEnvironment() error {
 	fmt.Println("INFO: Downloading jiotv_go.toml...")
 	tomlPath := filepath.Join(configDir, "jiotv_go.toml")
 	if err := downloadFile(JioTVGoTomlURL, tomlPath); err != nil {
-		return fmt.Errorf("failed to download jiotv_go.toml: %w", err)
+		if _, statErr := os.Stat(tomlPath); statErr != nil {
+			return fmt.Errorf("failed to download jiotv_go.toml: %w", err)
+		}
 	}
 
 	// Patch jiotv_go.toml to point to configs/custom-channels.json
 	// The repo has a mismatch (underscore vs hyphen) and we also want to ensure it looks in configs/
 	if content, err := os.ReadFile(tomlPath); err == nil {
-		newContent := strings.Replace(string(content), `custom_channels_file = "custom_channels.json"`, `custom_channels_file = "configs/custom-channels.json"`, 1)
-		if err := os.WriteFile(tomlPath, []byte(newContent), 0644); err != nil {
-			fmt.Printf("WARN: Failed to patch jiotv_go.toml: %v\n", err)
+		updated := string(content)
+		updated = strings.Replace(updated, `custom_channels_file = "custom_channels.json"`, `custom_channels_file = "configs/custom-channels.json"`, 1)
+		updated = strings.Replace(updated, `custom_channels_file = "configs/custom_channels.json"`, `custom_channels_file = "configs/custom-channels.json"`, 1)
+		if updated != string(content) {
+			if err := os.WriteFile(tomlPath, []byte(updated), 0644); err != nil {
+				fmt.Printf("WARN: Failed to patch jiotv_go.toml: %v\n", err)
+			}
 		}
 	}
 
@@ -76,7 +82,9 @@ func SetupEnvironment() error {
 	fmt.Println("INFO: Downloading custom-channels.json...")
 	customChPath := filepath.Join(configDir, "custom-channels.json")
 	if err := downloadFile(CustomChJSONURL, customChPath); err != nil {
-		return fmt.Errorf("failed to download custom-channels.json: %w", err)
+		if _, statErr := os.Stat(customChPath); statErr != nil {
+			return fmt.Errorf("failed to download custom-channels.json: %w", err)
+		}
 	}
 
 	// 3. Load the downloaded custom-channels.json
@@ -92,7 +100,9 @@ func SetupEnvironment() error {
 	fmt.Printf("INFO: Fetching channels from %s...\n", AllM3UURL)
 	newChannels, err := fetchAndParseM3U(AllM3UURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch/parse M3U from %s: %w", AllM3UURL, err)
+		fmt.Printf("WARN: Failed to fetch/parse M3U from %s: %v\n", AllM3UURL, err)
+		fmt.Println("INFO: Environment setup complete. Added 0 channels.")
+		return nil
 	}
 
 	existingIDs := make(map[string]struct{}, len(customChannels.Channels))
