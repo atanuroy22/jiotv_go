@@ -63,40 +63,58 @@ func (c *JioTVConfig) Load(filename string) error {
 	if err := cleanenv.ReadConfig(filename, c); err != nil {
 		return err
 	}
+	rawCustomChannels := strings.TrimSpace(c.CustomChannelsFile)
+	if rawCustomChannels != "" {
+		log.Println("INFO: Custom channels file (raw):", rawCustomChannels)
+	}
 	c.normalizePaths(filename)
-	if strings.TrimSpace(c.CustomChannelsFile) != "" {
-		log.Println("INFO: Custom channels file:", c.CustomChannelsFile)
+	resolvedCustomChannels := strings.TrimSpace(c.CustomChannelsFile)
+	if resolvedCustomChannels != "" {
+		log.Println("INFO: Custom channels file (resolved):", resolvedCustomChannels)
+		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
 	}
 	return nil
 }
 
 func (c *JioTVConfig) normalizePaths(configFilePath string) {
-	if c.CustomChannelsFile == "" {
+	raw := strings.TrimSpace(c.CustomChannelsFile)
+	if raw == "" {
 		return
 	}
-	if filepath.IsAbs(c.CustomChannelsFile) {
+	if filepath.IsAbs(raw) {
 		return
 	}
-	if fileExists(c.CustomChannelsFile) {
+	if fileExists(raw) {
+		c.CustomChannelsFile = raw
 		return
 	}
 
 	configDir := filepath.Dir(configFilePath)
-	candidates := []string{
-		filepath.Join(configDir, c.CustomChannelsFile),
+	var relCandidates []string
+	relCandidates = append(relCandidates, raw)
+
+	rawSlash := filepath.ToSlash(raw)
+	if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+		relCandidates = append(relCandidates, strings.TrimPrefix(rawSlash, "configs/"))
 	}
 
-	base := filepath.Base(c.CustomChannelsFile)
+	base := filepath.Base(raw)
 	altBase := strings.ReplaceAll(base, "custom_channels", "custom-channels")
 	if altBase != base {
-		candidates = append(candidates,
-			filepath.Join(configDir, altBase),
-		)
+		relCandidates = append(relCandidates, altBase)
+		if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+			relCandidates = append(relCandidates, strings.TrimPrefix(filepath.ToSlash(altBase), "configs/"))
+		}
 	}
 
-	for _, p := range candidates {
-		if fileExists(p) {
-			c.CustomChannelsFile = p
+	for _, rel := range relCandidates {
+		rel = filepath.Clean(filepath.FromSlash(rel))
+		if rel == "" || rel == "." {
+			continue
+		}
+		candidate := filepath.Join(configDir, rel)
+		if fileExists(candidate) {
+			c.CustomChannelsFile = candidate
 			return
 		}
 	}

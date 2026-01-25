@@ -66,6 +66,10 @@ func SetupEnvironment() error {
 
 	if err := ensureCustomChannelsSettingInToml(tomlPath); err != nil {
 		fmt.Printf("WARN: Failed to patch jiotv_go.toml: %v\n", err)
+	} else {
+		if v, err := readTomlCustomChannelsValue(tomlPath); err == nil && strings.TrimSpace(v) != "" {
+			fmt.Printf("INFO: TOML custom_channels_file: %s\n", v)
+		}
 	}
 
 	// 2. Download custom-channels.json
@@ -202,6 +206,29 @@ func ensureCustomChannelsSettingInToml(tomlPath string) error {
 	}
 
 	return os.WriteFile(tomlPath, []byte(out.String()), 0644)
+}
+
+func readTomlCustomChannelsValue(tomlPath string) (string, error) {
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		return "", err
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "custom_channels_file") {
+			return trimmed, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", nil
 }
 
 var setupHTTPClient = &http.Client{
