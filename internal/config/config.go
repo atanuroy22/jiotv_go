@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
@@ -59,7 +60,48 @@ func (c *JioTVConfig) Load(filename string) error {
 		return cleanenv.ReadEnv(c)
 	}
 	log.Println("INFO: Using config file:", filename)
-	return cleanenv.ReadConfig(filename, c)
+	if err := cleanenv.ReadConfig(filename, c); err != nil {
+		return err
+	}
+	c.normalizePaths(filename)
+	return nil
+}
+
+func (c *JioTVConfig) normalizePaths(configFilePath string) {
+	if c.CustomChannelsFile == "" {
+		return
+	}
+	if filepath.IsAbs(c.CustomChannelsFile) {
+		return
+	}
+	if fileExists(c.CustomChannelsFile) {
+		return
+	}
+
+	configDir := filepath.Dir(configFilePath)
+	candidates := []string{
+		filepath.Join(configDir, c.CustomChannelsFile),
+	}
+
+	base := filepath.Base(c.CustomChannelsFile)
+	altBase := strings.ReplaceAll(base, "custom_channels", "custom-channels")
+	if altBase != base {
+		candidates = append(candidates,
+			filepath.Join(configDir, altBase),
+		)
+	}
+
+	for _, p := range candidates {
+		if fileExists(p) {
+			c.CustomChannelsFile = p
+			return
+		}
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // Get retrieves the value of the config field specified by key.
@@ -83,7 +125,7 @@ func (*JioTVConfig) Get(key string) interface{} {
 // If no file is found, an empty string is returned.
 func commonFileExists() string {
 	commonFiles := []string{"jiotv_go.yml", "jiotv_go.yaml", "jiotv_go.toml", "jiotv_go.json", "config.json", "config.yml", "config.toml", "config.yaml"}
-	
+
 	exePath, _ := os.Executable()
 	exeDir := filepath.Dir(exePath)
 

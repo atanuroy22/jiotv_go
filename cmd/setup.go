@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -40,7 +43,13 @@ func SetupEnvironment() error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 	exeDir := filepath.Dir(exePath)
-	configDir := filepath.Join(exeDir, ConfigDir)
+	baseDir := exeDir
+	if runtime.GOOS == "android" {
+		if cwd, err := os.Getwd(); err == nil {
+			baseDir = cwd
+		}
+	}
+	configDir := filepath.Join(baseDir, ConfigDir)
 
 	// Ensure configs directory exists
 	if err := os.MkdirAll(configDir, 0755); err != nil {
@@ -120,7 +129,56 @@ func SetupEnvironment() error {
 	return nil
 }
 
-var setupHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var setupHTTPClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: setupHTTPTransport(),
+}
+
+func setupHTTPTransport() http.RoundTripper {
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+
+	transport := defaultTransport.Clone()
+	transport.TLSClientConfig = &tls.Config{
+		RootCAs: setupRootCAs(),
+	}
+	return transport
+}
+
+func setupRootCAs() *x509.CertPool {
+	pool, err := x509.SystemCertPool()
+	if pool == nil || err != nil {
+		pool = x509.NewCertPool()
+	}
+
+	var certFiles []string
+	if v := strings.TrimSpace(os.Getenv("SSL_CERT_FILE")); v != "" {
+		certFiles = append(certFiles, v)
+	}
+	if v := strings.TrimSpace(os.Getenv("SSL_CERT_DIR")); v != "" {
+		certFiles = append(certFiles, v)
+	}
+
+	certFiles = append(certFiles,
+		"/data/data/com.termux/files/usr/etc/tls/cert.pem",
+		"/etc/ssl/certs/ca-certificates.crt",
+		"/etc/pki/tls/certs/ca-bundle.crt",
+	)
+
+	for _, p := range certFiles {
+		info, statErr := os.Stat(p)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		if pem, readErr := os.ReadFile(p); readErr == nil {
+			_ = pool.AppendCertsFromPEM(pem)
+		}
+	}
+
+	return pool
+}
 
 func downloadFile(urlStr, filePath string) error {
 	var lastErr error

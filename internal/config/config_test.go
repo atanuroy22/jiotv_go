@@ -64,6 +64,33 @@ func TestJioTVConfig_Load(t *testing.T) {
 	}
 }
 
+func TestJioTVConfig_Load_NormalizesCustomChannelsPathRelativeToConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "configs")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create configs dir: %v", err)
+	}
+
+	customChannelsPath := filepath.Join(configDir, "custom-channels.json")
+	if err := os.WriteFile(customChannelsPath, []byte(`{"channels":[]}`), 0644); err != nil {
+		t.Fatalf("failed to write custom channels file: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "jiotv_go.toml")
+	if err := os.WriteFile(configPath, []byte(`custom_channels_file = "custom_channels.json"`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	var cfg JioTVConfig
+	if err := cfg.Load(configPath); err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if cfg.CustomChannelsFile != customChannelsPath {
+		t.Fatalf("expected custom channels path %q, got %q", customChannelsPath, cfg.CustomChannelsFile)
+	}
+}
+
 func TestJioTVConfig_Get(t *testing.T) {
 	// Set the global Cfg for Get to work as intended
 	Cfg = JioTVConfig{
