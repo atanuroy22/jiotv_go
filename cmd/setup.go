@@ -43,13 +43,11 @@ func SetupEnvironment() error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 	exeDir := filepath.Dir(exePath)
-	baseDir := exeDir
-	if runtime.GOOS == "android" {
-		if cwd, err := os.Getwd(); err == nil {
-			baseDir = cwd
-		}
-	}
+	baseDir := chooseConfigBaseDir(exeDir)
 	configDir := filepath.Join(baseDir, ConfigDir)
+	fmt.Printf("INFO: Executable dir: %s\n", exeDir)
+	fmt.Printf("INFO: Config base dir: %s\n", baseDir)
+	fmt.Printf("INFO: Config dir: %s\n", configDir)
 
 	// Ensure configs directory exists
 	if err := os.MkdirAll(configDir, 0755); err != nil {
@@ -59,28 +57,21 @@ func SetupEnvironment() error {
 	// 1. Download jiotv_go.toml
 	fmt.Println("INFO: Downloading jiotv_go.toml...")
 	tomlPath := filepath.Join(configDir, "jiotv_go.toml")
+	fmt.Printf("INFO: Config TOML path: %s\n", tomlPath)
 	if err := downloadFile(JioTVGoTomlURL, tomlPath); err != nil {
 		if _, statErr := os.Stat(tomlPath); statErr != nil {
 			return fmt.Errorf("failed to download jiotv_go.toml: %w", err)
 		}
 	}
 
-	// Patch jiotv_go.toml to point to configs/custom-channels.json
-	// The repo has a mismatch (underscore vs hyphen) and we also want to ensure it looks in configs/
-	if content, err := os.ReadFile(tomlPath); err == nil {
-		updated := string(content)
-		updated = strings.Replace(updated, `custom_channels_file = "custom_channels.json"`, `custom_channels_file = "configs/custom-channels.json"`, 1)
-		updated = strings.Replace(updated, `custom_channels_file = "configs/custom_channels.json"`, `custom_channels_file = "configs/custom-channels.json"`, 1)
-		if updated != string(content) {
-			if err := os.WriteFile(tomlPath, []byte(updated), 0644); err != nil {
-				fmt.Printf("WARN: Failed to patch jiotv_go.toml: %v\n", err)
-			}
-		}
+	if err := ensureCustomChannelsSettingInToml(tomlPath); err != nil {
+		fmt.Printf("WARN: Failed to patch jiotv_go.toml: %v\n", err)
 	}
 
 	// 2. Download custom-channels.json
 	fmt.Println("INFO: Downloading custom-channels.json...")
 	customChPath := filepath.Join(configDir, "custom-channels.json")
+	fmt.Printf("INFO: Custom channels JSON path: %s\n", customChPath)
 	if err := downloadFile(CustomChJSONURL, customChPath); err != nil {
 		if _, statErr := os.Stat(customChPath); statErr != nil {
 			return fmt.Errorf("failed to download custom-channels.json: %w", err)
@@ -137,6 +128,80 @@ func SetupEnvironment() error {
 
 	fmt.Printf("INFO: Environment setup complete. Added %d channels.\n", addedCount)
 	return nil
+}
+
+func chooseConfigBaseDir(exeDir string) string {
+	if runtime.GOOS == "windows" {
+		return exeDir
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		return exeDir
+	}
+
+	if strings.HasPrefix(exeDir, "/data/data/com.termux/files/usr/") {
+		return cwd
+	}
+
+	if !dirWritable(exeDir) && dirWritable(cwd) {
+		return cwd
+	}
+
+	return exeDir
+}
+
+func dirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".jiotv_go_tmp_*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+func ensureCustomChannelsSettingInToml(tomlPath string) error {
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		return err
+	}
+
+	desired := `custom_channels_file = "configs/custom-channels.json"`
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	var out strings.Builder
+	out.Grow(len(data) + 64)
+
+	found := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if strings.HasPrefix(trimmed, "#") {
+			out.WriteString(line)
+			out.WriteByte('\n')
+			continue
+		}
+		if strings.HasPrefix(trimmed, "custom_channels_file") {
+			out.WriteString(desired)
+			out.WriteByte('\n')
+			found = true
+			continue
+		}
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if !found {
+		out.WriteString(desired)
+		out.WriteByte('\n')
+	}
+
+	return os.WriteFile(tomlPath, []byte(out.String()), 0644)
 }
 
 var setupHTTPClient = &http.Client{

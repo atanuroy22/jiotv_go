@@ -64,6 +64,9 @@ func (c *JioTVConfig) Load(filename string) error {
 		return err
 	}
 	c.normalizePaths(filename)
+	if strings.TrimSpace(c.CustomChannelsFile) != "" {
+		log.Println("INFO: Custom channels file:", c.CustomChannelsFile)
+	}
 	return nil
 }
 
