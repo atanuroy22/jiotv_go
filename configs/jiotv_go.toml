@@ -13,7 +13,7 @@ drm = true
 disable_ts_handler = false
 
 # Logout Feature (set to true to disable, false to enable)
-disable_logout = true
+disable_logout = false
 
 # URL Encryption (set to true to disable, false to enable)
 disable_url_encryption = false
