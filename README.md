@@ -87,3 +87,5 @@ Found a pesky bug? No worries! Please help us improve JioTV Go by creating an is
 
 We wholeheartedly welcome your contributions. If you have ideas, fixes, or enhancements in mind, don't hesitate to create a pull request with your changes. For significant alterations, start by creating an issue to discuss your plans with us. Together, we can make JioTV Go even more incredible.
 
+<!-- for building local -->
+<!-- powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path .\build | Out-Null; go build -trimpath -o .\build\jiotv_go.exe ." -->
