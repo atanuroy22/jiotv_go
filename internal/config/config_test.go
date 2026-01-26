@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -115,6 +116,28 @@ func TestJioTVConfig_Load_StripsConfigsPrefixWhenConfigInConfigsDir(t *testing.T
 
 	if cfg.CustomChannelsFile != customChannelsPath {
 		t.Fatalf("expected custom channels path %q, got %q", customChannelsPath, cfg.CustomChannelsFile)
+	}
+}
+
+func TestJioTVConfig_Load_EnvOnly_SetsDefaultCustomChannelsFile(t *testing.T) {
+	orig := os.Getenv("JIOTV_CUSTOM_CHANNELS_FILE")
+	defer func() {
+		if orig == "" {
+			_ = os.Unsetenv("JIOTV_CUSTOM_CHANNELS_FILE")
+		} else {
+			_ = os.Setenv("JIOTV_CUSTOM_CHANNELS_FILE", orig)
+		}
+	}()
+
+	_ = os.Unsetenv("JIOTV_CUSTOM_CHANNELS_FILE")
+
+	var cfg JioTVConfig
+	if err := cfg.Load(""); err != nil {
+		t.Fatalf("failed to load env-only config: %v", err)
+	}
+
+	if strings.TrimSpace(cfg.CustomChannelsFile) == "" {
+		t.Fatalf("expected default custom channels file to be set")
 	}
 }
 

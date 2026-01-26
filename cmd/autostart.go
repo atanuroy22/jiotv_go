@@ -96,6 +96,10 @@ func isTermux() bool {
 	return termuxProperty != ""
 }
 
+func IsTermux() bool {
+	return isTermux()
+}
+
 // getConsentFromUser prompts the user to consent to auto start and returns
 // a boolean indicating if consent was given. If running in Termux, consent
 // is assumed. Otherwise, the user is prompted in the terminal.

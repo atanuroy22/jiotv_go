@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
 )
 
 const (
@@ -58,7 +60,13 @@ func SetupEnvironment() error {
 	fmt.Println("INFO: Downloading jiotv_go.toml...")
 	tomlPath := filepath.Join(configDir, "jiotv_go.toml")
 	fmt.Printf("INFO: Config TOML path: %s\n", tomlPath)
-	if err := downloadFile(JioTVGoTomlURL, tomlPath); err != nil {
+	if pathExists(tomlPath) {
+		fmt.Printf("INFO: jiotv_go.toml exists, skipping download: %s\n", tomlPath)
+	} else if altToml := filepath.Join("configs", "jiotv_go.toml"); pathExists(altToml) {
+		fmt.Printf("INFO: jiotv_go.toml exists, skipping download: %s\n", altToml)
+		tomlPath = altToml
+		configDir = filepath.Dir(altToml)
+	} else if err := downloadFile(JioTVGoTomlURL, tomlPath); err != nil {
 		if !pathExists(tomlPath) {
 			altToml := filepath.Join("configs", "jiotv_go.toml")
 			if pathExists(altToml) {
@@ -94,21 +102,18 @@ func SetupEnvironment() error {
 				customChPath = altCustomCh
 				configDir = filepath.Dir(altCustomCh)
 			} else {
-				return fmt.Errorf("failed to download custom-channels.json: %w", err)
+				fmt.Printf("WARN: Failed to download custom-channels.json: %v\n", err)
 			}
 		} else {
 			fmt.Printf("WARN: Failed to download custom-channels.json, using existing: %s\n", customChPath)
 		}
 	}
 
-	// 3. Load the downloaded custom-channels.json
 	var customChannels television.CustomChannelsConfig
-	data, err := os.ReadFile(customChPath)
-	if err != nil {
-		return fmt.Errorf("failed to read custom-channels.json: %w", err)
-	}
-	if err := json.Unmarshal(data, &customChannels); err != nil {
-		return fmt.Errorf("failed to parse custom-channels.json: %w", err)
+	if data, readErr := os.ReadFile(customChPath); readErr == nil {
+		if unmarshalErr := json.Unmarshal(data, &customChannels); unmarshalErr != nil {
+			fmt.Printf("WARN: Failed to parse custom-channels.json, continuing: %v\n", unmarshalErr)
+		}
 	}
 
 	fmt.Printf("INFO: Fetching channels from %s...\n", AllM3UURL)
@@ -119,20 +124,7 @@ func SetupEnvironment() error {
 		return nil
 	}
 
-	existingIDs := make(map[string]struct{}, len(customChannels.Channels))
-	for _, ch := range customChannels.Channels {
-		existingIDs[ch.ID] = struct{}{}
-	}
-
-	var addedCount int
-	for _, ch := range newChannels {
-		if _, ok := existingIDs[ch.ID]; ok {
-			continue
-		}
-		customChannels.Channels = append(customChannels.Channels, ch)
-		existingIDs[ch.ID] = struct{}{}
-		addedCount++
-	}
+	customChannels.Channels = dedupeCustomChannels(newChannels)
 
 	updatedData, err := json.MarshalIndent(customChannels, "", "  ")
 	if err != nil {
@@ -149,8 +141,63 @@ func SetupEnvironment() error {
 		return fmt.Errorf("failed to replace custom-channels.json: %w", err)
 	}
 
-	fmt.Printf("INFO: Environment setup complete. Added %d channels.\n", addedCount)
+	fmt.Printf("INFO: Environment setup complete. Updated %d channels.\n", len(customChannels.Channels))
 	return nil
+}
+
+func RefreshCustomChannelsFromM3U() error {
+	customChPath := strings.TrimSpace(config.Cfg.CustomChannelsFile)
+	if customChPath == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(customChPath), 0755); err != nil {
+		return err
+	}
+
+	newChannels, err := fetchAndParseM3U(AllM3UURL)
+	if err != nil {
+		return err
+	}
+
+	customChannels := television.CustomChannelsConfig{
+		Channels: dedupeCustomChannels(newChannels),
+	}
+
+	updatedData, err := json.MarshalIndent(customChannels, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	tmpCustomChPath := customChPath + ".tmp"
+	if err := os.WriteFile(tmpCustomChPath, updatedData, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpCustomChPath, customChPath); err != nil {
+		_ = os.Remove(tmpCustomChPath)
+		return err
+	}
+
+	television.ReloadCustomChannels()
+	utils.Log.Printf("INFO: Refreshed custom channels: %d", len(customChannels.Channels))
+	return nil
+}
+
+func dedupeCustomChannels(channels []television.CustomChannel) []television.CustomChannel {
+	seen := make(map[string]struct{}, len(channels))
+	out := make([]television.CustomChannel, 0, len(channels))
+	for _, ch := range channels {
+		id := strings.TrimSpace(ch.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, ch)
+	}
+	return out
 }
 
 func chooseConfigBaseDir(exeDir string) string {

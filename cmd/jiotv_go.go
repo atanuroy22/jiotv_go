@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log" // Added import for *log.Logger type
 	"net/http"
+	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants"
@@ -64,6 +65,13 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	// Start Scheduler
 	scheduler.Init()
 	defer scheduler.Stop()
+
+	go func() {
+		if err := RefreshCustomChannelsFromM3U(); err != nil {
+			utils.Log.Printf("WARN: Custom channels refresh failed: %v", err)
+		}
+	}()
+	scheduler.Add("custom-channels-refresh", 4*time.Hour, RefreshCustomChannelsFromM3U)
 
 	engine := html.NewFileSystem(http.FS(web.GetViewFiles()), ".html")
 	if config.Cfg.Debug {

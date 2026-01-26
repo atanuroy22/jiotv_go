@@ -57,7 +57,11 @@ func (c *JioTVConfig) Load(filename string) error {
 	}
 	if filename == "" {
 		log.Println("INFO: No config file found, using environment variables")
-		return cleanenv.ReadEnv(c)
+		if err := cleanenv.ReadEnv(c); err != nil {
+			return err
+		}
+		c.applyDefaults()
+		return nil
 	}
 	log.Println("INFO: Using config file:", filename)
 	if err := cleanenv.ReadConfig(filename, c); err != nil {
@@ -74,6 +78,12 @@ func (c *JioTVConfig) Load(filename string) error {
 		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
 	}
 	return nil
+}
+
+func (c *JioTVConfig) applyDefaults() {
+	if strings.TrimSpace(c.CustomChannelsFile) == "" {
+		c.CustomChannelsFile = filepath.Join("configs", "custom-channels.json")
+	}
 }
 
 func (c *JioTVConfig) normalizePaths(configFilePath string) {
