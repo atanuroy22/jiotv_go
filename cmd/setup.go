@@ -59,8 +59,17 @@ func SetupEnvironment() error {
 	tomlPath := filepath.Join(configDir, "jiotv_go.toml")
 	fmt.Printf("INFO: Config TOML path: %s\n", tomlPath)
 	if err := downloadFile(JioTVGoTomlURL, tomlPath); err != nil {
-		if _, statErr := os.Stat(tomlPath); statErr != nil {
-			return fmt.Errorf("failed to download jiotv_go.toml: %w", err)
+		if !pathExists(tomlPath) {
+			altToml := filepath.Join("configs", "jiotv_go.toml")
+			if pathExists(altToml) {
+				fmt.Printf("WARN: Failed to download jiotv_go.toml, using existing: %s\n", altToml)
+				tomlPath = altToml
+				configDir = filepath.Dir(altToml)
+			} else {
+				return fmt.Errorf("failed to download jiotv_go.toml: %w", err)
+			}
+		} else {
+			fmt.Printf("WARN: Failed to download jiotv_go.toml, using existing: %s\n", tomlPath)
 		}
 	}
 
@@ -76,9 +85,19 @@ func SetupEnvironment() error {
 	fmt.Println("INFO: Downloading custom-channels.json...")
 	customChPath := filepath.Join(configDir, "custom-channels.json")
 	fmt.Printf("INFO: Custom channels JSON path: %s\n", customChPath)
+	fmt.Printf("INFO: Custom channels alt JSON path: %s\n", filepath.Join(configDir, "custom_channels.json"))
 	if err := downloadFile(CustomChJSONURL, customChPath); err != nil {
-		if _, statErr := os.Stat(customChPath); statErr != nil {
-			return fmt.Errorf("failed to download custom-channels.json: %w", err)
+		if !pathExists(customChPath) {
+			altCustomCh := filepath.Join("configs", "custom-channels.json")
+			if pathExists(altCustomCh) {
+				fmt.Printf("WARN: Failed to download custom-channels.json, using existing: %s\n", altCustomCh)
+				customChPath = altCustomCh
+				configDir = filepath.Dir(altCustomCh)
+			} else {
+				return fmt.Errorf("failed to download custom-channels.json: %w", err)
+			}
+		} else {
+			fmt.Printf("WARN: Failed to download custom-channels.json, using existing: %s\n", customChPath)
 		}
 	}
 
@@ -229,6 +248,11 @@ func readTomlCustomChannelsValue(tomlPath string) (string, error) {
 		return "", err
 	}
 	return "", nil
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 var setupHTTPClient = &http.Client{
