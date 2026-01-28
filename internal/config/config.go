@@ -16,6 +16,8 @@ import (
 type JioTVConfig struct {
 	// Enable Or Disable EPG Generation. Default: false
 	EPG bool `yaml:"epg" env:"JIOTV_EPG" json:"epg" toml:"epg"`
+	// External EPG URL to serve from /epg.xml.gz when local generation is unavailable.
+	EPGURL string `yaml:"epg_url" env:"JIOTV_EPG_URL" json:"epg_url" toml:"epg_url"`
 	// Enable Or Disable Debug Mode. Default: false
 	Debug bool `yaml:"debug" env:"JIOTV_DEBUG" json:"debug" toml:"debug"`
 	// Enable Or Disable TS Handler. While TS Handler is enabled, the server will serve the TS files directly from JioTV API. Default: false
@@ -36,6 +38,8 @@ type JioTVConfig struct {
 	LogPath string `yaml:"log_path" env:"JIOTV_LOG_PATH" json:"log_path" toml:"log_path"`
 	// LogToStdout controls logging to stdout/stderr. Default: true
 	LogToStdout bool `yaml:"log_to_stdout" env:"JIOTV_LOG_TO_STDOUT" json:"log_to_stdout" toml:"log_to_stdout"`
+	// CustomChannelsURL is an optional remote JSON URL for custom channels.
+	CustomChannelsURL string `yaml:"custom_channels_url" env:"JIOTV_CUSTOM_CHANNELS_URL" json:"custom_channels_url" toml:"custom_channels_url"`
 	// CustomChannelsFile is the path to custom channels configuration file. Default: ""
 	CustomChannelsFile string `yaml:"custom_channels_file" env:"JIOTV_CUSTOM_CHANNELS_FILE" json:"custom_channels_file" toml:"custom_channels_file"`
 	// DefaultCategories is the list of category IDs to display on the default web page. Default: []
@@ -83,6 +87,12 @@ func (c *JioTVConfig) Load(filename string) error {
 func (c *JioTVConfig) applyDefaults() {
 	if strings.TrimSpace(c.CustomChannelsFile) == "" {
 		c.CustomChannelsFile = filepath.Join("configs", "custom-channels.json")
+	}
+	if strings.TrimSpace(c.EPGURL) == "" {
+		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
+	}
+	if strings.TrimSpace(c.CustomChannelsURL) == "" {
+		c.CustomChannelsURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
 	}
 }
 

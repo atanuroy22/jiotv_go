@@ -26,9 +26,7 @@ const (
 	Branch          = "develop"
 	BaseURL         = "https://raw.githubusercontent.com/" + RepoOwner + "/" + RepoName + "/" + Branch
 	JioTVGoTomlURL  = BaseURL + "/configs/jiotv_go.toml"
-	CustomChJSONURL = BaseURL + "/configs/custom-channels.json"
-
-	AllM3UURL = "https://atanuroy22.github.io/iptv/output/all.m3u"
+	CustomChJSONURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
 
 	ConfigDir = "configs"
 )
@@ -109,39 +107,17 @@ func SetupEnvironment() error {
 		}
 	}
 
-	var customChannels television.CustomChannelsConfig
 	if data, readErr := os.ReadFile(customChPath); readErr == nil {
+		var customChannels television.CustomChannelsConfig
 		if unmarshalErr := json.Unmarshal(data, &customChannels); unmarshalErr != nil {
-			fmt.Printf("WARN: Failed to parse custom-channels.json, continuing: %v\n", unmarshalErr)
+			fmt.Printf("WARN: Failed to parse custom-channels.json: %v\n", unmarshalErr)
+		} else {
+			fmt.Printf("INFO: Environment setup complete. Downloaded %d channels.\n", len(customChannels.Channels))
+			return nil
 		}
 	}
 
-	fmt.Printf("INFO: Fetching channels from %s...\n", AllM3UURL)
-	newChannels, err := fetchAndParseM3U(AllM3UURL)
-	if err != nil {
-		fmt.Printf("WARN: Failed to fetch/parse M3U from %s: %v\n", AllM3UURL, err)
-		fmt.Println("INFO: Environment setup complete. Added 0 channels.")
-		return nil
-	}
-
-	customChannels.Channels = dedupeCustomChannels(newChannels)
-
-	updatedData, err := json.MarshalIndent(customChannels, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal updated custom channels: %w", err)
-	}
-
-	tmpCustomChPath := customChPath + ".tmp"
-	if err := os.WriteFile(tmpCustomChPath, updatedData, 0644); err != nil {
-		return fmt.Errorf("failed to write updated custom-channels.json: %w", err)
-	}
-
-	if err := os.Rename(tmpCustomChPath, customChPath); err != nil {
-		_ = os.Remove(tmpCustomChPath)
-		return fmt.Errorf("failed to replace custom-channels.json: %w", err)
-	}
-
-	fmt.Printf("INFO: Environment setup complete. Updated %d channels.\n", len(customChannels.Channels))
+	fmt.Println("INFO: Environment setup complete.")
 	return nil
 }
 
@@ -155,31 +131,21 @@ func RefreshCustomChannelsFromM3U() error {
 		return err
 	}
 
-	newChannels, err := fetchAndParseM3U(AllM3UURL)
-	if err != nil {
-		return err
+	urlStr := strings.TrimSpace(config.Cfg.CustomChannelsURL)
+	if urlStr == "" {
+		urlStr = CustomChJSONURL
 	}
-
-	customChannels := television.CustomChannelsConfig{
-		Channels: dedupeCustomChannels(newChannels),
-	}
-
-	updatedData, err := json.MarshalIndent(customChannels, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmpCustomChPath := customChPath + ".tmp"
-	if err := os.WriteFile(tmpCustomChPath, updatedData, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpCustomChPath, customChPath); err != nil {
-		_ = os.Remove(tmpCustomChPath)
-		return err
+	if err := downloadFile(urlStr, customChPath); err != nil {
+		if pathExists(customChPath) {
+			utils.Log.Printf("WARN: Custom channels download failed (keeping existing file): %v", err)
+			return nil
+		}
+		utils.Log.Printf("WARN: Custom channels download failed and no local file exists: %v", err)
+		return nil
 	}
 
 	television.ReloadCustomChannels()
-	utils.Log.Printf("INFO: Refreshed custom channels: %d", len(customChannels.Channels))
+	utils.Log.Printf("INFO: Refreshed custom channels from URL")
 	return nil
 }
 

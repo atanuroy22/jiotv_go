@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"math/big"
+	"net/url"
 
 	"os"
 	"sync"
@@ -131,11 +132,22 @@ func genXML() ([]byte, error) {
 	// Create channels and programmes slices with initial capacity
 	var channels []Channel
 	var programmes []Programme
+	var programmesMu sync.Mutex
+
+	deviceID := utils.GetDeviceID()
+	crmID := ""
+	uniqueID := ""
+	if creds, err := utils.GetJIOTVCredentials(); err == nil && creds != nil {
+		crmID = creds.CRM
+		uniqueID = creds.UniqueID
+	}
 
 	// Define a worker function for fetching EPG data
 	fetchEPG := func(channel Channel, bar *progressbar.ProgressBar) {
 		req := fasthttp.AcquireRequest()
-		req.Header.SetUserAgent(headers.UserAgentOkHttp)
+		utils.SetCommonJioTVHeaders(req, deviceID, crmID, uniqueID)
+		req.Header.Set(headers.Accept, headers.AcceptJSON)
+		req.Header.SetMethod("GET")
 		defer fasthttp.ReleaseRequest(req)
 
 		resp := fasthttp.AcquireResponse()
@@ -147,6 +159,10 @@ func genXML() ([]byte, error) {
 			if err := client.Do(req, resp); err != nil {
 				// Handle error
 				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: %v", channel.ID, offset, err)
+				continue
+			}
+			if resp.StatusCode() != fasthttp.StatusOK {
+				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: status %d, body: %s", channel.ID, offset, resp.StatusCode(), resp.Body())
 				continue
 			}
 
@@ -162,7 +178,10 @@ func genXML() ([]byte, error) {
 			for _, programme := range epgResponse.EPG {
 				startTime := formatTime(time.UnixMilli(programme.StartEpoch))
 				endTime := formatTime(time.UnixMilli(programme.EndEpoch))
-				programmes = append(programmes, NewProgramme(channel.ID, startTime, endTime, programme.Title, programme.Description, programme.ShowCategory, programme.Poster))
+				p := NewProgramme(channel.ID, startTime, endTime, programme.Title, programme.Description, programme.ShowCategory, programme.Poster)
+				programmesMu.Lock()
+				programmes = append(programmes, p)
+				programmesMu.Unlock()
 			}
 		}
 		bar.Add(1)
@@ -174,6 +193,15 @@ func genXML() ([]byte, error) {
 	resp, err := utils.MakeHTTPRequest(utils.HTTPRequestConfig{
 		URL:    CHANNEL_URL,
 		Method: "GET",
+		Headers: map[string]string{
+			headers.UserAgent:  headers.UserAgentOkHttp,
+			headers.Accept:     headers.AcceptJSON,
+			headers.DeviceType: headers.DeviceTypePhone,
+			headers.OS:         headers.OSAndroid,
+			"appkey":           "NzNiMDhlYzQyNjJm",
+			"lbcookie":         "1",
+			"usertype":         "JIO",
+		},
 	}, client)
 	if err != nil {
 		return nil, utils.LogAndReturnError(err, "Failed to fetch channels")
@@ -263,4 +291,63 @@ func GenXMLGz(filename string) error {
 	}
 	fmt.Println("\tEPG file generated successfully")
 	return nil
+}
+
+func DownloadExternalEPG(epgURL, filename string) error {
+	client := utils.GetRequestClient()
+
+	currentURL := epgURL
+	for i := 0; i < 5; i++ {
+		req := fasthttp.AcquireRequest()
+		resp := fasthttp.AcquireResponse()
+
+		req.SetRequestURI(currentURL)
+		req.Header.SetMethod("GET")
+		req.Header.SetUserAgent(headers.UserAgentOkHttp)
+		req.Header.Set(headers.Accept, "*/*")
+
+		err := client.DoTimeout(req, resp, 20*time.Second)
+		fasthttp.ReleaseRequest(req)
+		if err != nil {
+			fasthttp.ReleaseResponse(resp)
+			return err
+		}
+
+		status := resp.StatusCode()
+		if status >= 300 && status <= 308 {
+			location := string(resp.Header.Peek("Location"))
+			fasthttp.ReleaseResponse(resp)
+			if location == "" {
+				return fmt.Errorf("redirect without location (status %d)", status)
+			}
+			base, err := url.Parse(currentURL)
+			if err != nil {
+				return err
+			}
+			next, err := url.Parse(location)
+			if err != nil {
+				return err
+			}
+			currentURL = base.ResolveReference(next).String()
+			continue
+		}
+
+		if status != fasthttp.StatusOK {
+			body := resp.Body()
+			fasthttp.ReleaseResponse(resp)
+			return fmt.Errorf("epg download failed: status %d, body: %s", status, body)
+		}
+
+		data := append([]byte(nil), resp.Body()...)
+		fasthttp.ReleaseResponse(resp)
+
+		tmp := filename + ".tmp"
+		if err := os.WriteFile(tmp, data, 0644); err != nil {
+			return err
+		}
+		_ = os.Remove(filename)
+		return os.Rename(tmp, filename)
+	}
+
+	return fmt.Errorf("too many redirects")
 }
