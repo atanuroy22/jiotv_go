@@ -1,6 +1,7 @@
 package epg
 
 import (
+	"bytes"
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/json"
@@ -35,6 +36,23 @@ const (
 	defaultRandomHour   = 2
 	defaultRandomMinute = 30
 )
+
+func responseBody(resp *fasthttp.Response) ([]byte, error) {
+	if bytes.Contains(resp.Header.Peek("Content-Encoding"), []byte("gzip")) {
+		return resp.BodyGunzip()
+	}
+	return resp.Body(), nil
+}
+
+func timeFromEpoch(epoch int64) (time.Time, bool) {
+	if epoch <= 0 {
+		return time.Time{}, false
+	}
+	if epoch < 100000000000 {
+		return time.Unix(epoch, 0), true
+	}
+	return time.UnixMilli(epoch), true
+}
 
 // Init initializes EPG generation and schedules it for the next day.
 func Init() {
@@ -161,23 +179,38 @@ func genXML() ([]byte, error) {
 				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: %v", channel.ID, offset, err)
 				continue
 			}
-			if resp.StatusCode() != fasthttp.StatusOK {
-				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: status %d, body: %s", channel.ID, offset, resp.StatusCode(), resp.Body())
+			status := resp.StatusCode()
+			if status == fasthttp.StatusNotFound {
+				break
+			}
+			if status != fasthttp.StatusOK {
+				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: status %d, body: %s", channel.ID, offset, status, resp.Body())
+				continue
+			}
+
+			body, err := responseBody(resp)
+			if err != nil {
+				utils.Log.Printf("Error reading EPG response body for channel %d, offset %d: %v", channel.ID, offset, err)
 				continue
 			}
 
 			var epgResponse EPGResponse
-			if err := json.Unmarshal(resp.Body(), &epgResponse); err != nil {
+			if err := json.Unmarshal(body, &epgResponse); err != nil {
 				// Handle error
 				utils.Log.Printf("Error unmarshaling EPG response for channel %d, offset %d: %v", channel.ID, offset, err)
 				// Print response body for debugging
-				utils.Log.Printf("Response body: %s", resp.Body())
+				utils.Log.Printf("Response body: %s", body)
 				continue
 			}
 
 			for _, programme := range epgResponse.EPG {
-				startTime := formatTime(time.UnixMilli(programme.StartEpoch))
-				endTime := formatTime(time.UnixMilli(programme.EndEpoch))
+				startT, okStart := timeFromEpoch(programme.StartEpoch)
+				endT, okEnd := timeFromEpoch(programme.EndEpoch)
+				if !okStart || !okEnd {
+					continue
+				}
+				startTime := formatTime(startT)
+				endTime := formatTime(endT)
 				p := NewProgramme(channel.ID, startTime, endTime, programme.Title, programme.Description, programme.ShowCategory, programme.Poster)
 				programmesMu.Lock()
 				programmes = append(programmes, p)
@@ -209,7 +242,14 @@ func genXML() ([]byte, error) {
 	defer fasthttp.ReleaseResponse(resp)
 
 	var channelsResponse ChannelsResponse
-	if err := utils.ParseJSONResponse(resp, &channelsResponse); err != nil {
+	if resp.StatusCode() != fasthttp.StatusOK {
+		return nil, fmt.Errorf("failed to fetch channels: status %d, body: %s", resp.StatusCode(), resp.Body())
+	}
+	body, err := responseBody(resp)
+	if err != nil {
+		return nil, utils.LogAndReturnError(err, "Failed to read channels response body")
+	}
+	if err := json.Unmarshal(body, &channelsResponse); err != nil {
 		return nil, utils.LogAndReturnError(err, "Failed to parse channels response")
 	}
 

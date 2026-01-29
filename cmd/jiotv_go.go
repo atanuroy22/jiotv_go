@@ -61,6 +61,10 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	if (config.Cfg.EPG && config.Cfg.EPGURL == "") || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz") {
 		go epg.Init()
 	}
+	// only if config EPGURL is not empty
+	// if config.Cfg.EPGURL == "" && (config.Cfg.EPG || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz")) {
+	// 	go epg.Init()
+	// }
 
 	// Start Scheduler
 	scheduler.Init()

@@ -1,5 +1,5 @@
 {
-    "epg": false,
+    "epg": true,
     "debug": false,
     "disable_ts_handler": false,
     "disable_logout": false,
@@ -12,5 +12,7 @@
     "log_to_stdout": false,
     "custom_channels_file": "",
     "default_categories": [],
-    "default_languages": []
+    "default_languages": [],
+    "custom_channels_url": "",
+    "epg_url": ""
 }

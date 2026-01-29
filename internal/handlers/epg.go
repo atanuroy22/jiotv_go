@@ -22,6 +22,7 @@ const (
 )
 
 var externalEPGMu sync.Mutex
+var localEPGMu sync.Mutex
 
 // EPGHandler handles EPG requests
 func EPGHandler(c *fiber.Ctx) error {
@@ -41,6 +42,23 @@ func EPGHandler(c *fiber.Ctx) error {
 			}
 		}
 		return internalUtils.InternalServerError(c, err.Error())
+	}
+
+	if config.Cfg.EPG {
+		localEPGMu.Lock()
+		defer localEPGMu.Unlock()
+
+		if _, err := os.Stat(epgFilePath); err == nil {
+			return c.SendFile(epgFilePath, true)
+		}
+
+		if err := epg.GenXMLGz(epgFilePath); err != nil {
+			return internalUtils.InternalServerError(c, err.Error())
+		}
+
+		if _, err := os.Stat(epgFilePath); err == nil {
+			return c.SendFile(epgFilePath, true)
+		}
 	}
 
 	errMessage := "EPG not found. Enable JIOTV_EPG or set JIOTV_EPG_URL to an external guide."
