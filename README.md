@@ -6,12 +6,31 @@ JioTV Go, an exciting project that allows you to stream Live TV channels on the 
 
 ## For easy setup watch the video
 
-- Windows 
-  - [Watch Video](https://youtu.be/BnNTYTSvVBc)
-  - [Script](https://atanuroy22.github.io/jiotv_go/get_started.html#windows)
-- Android 
-  - [Watch Video](https://youtu.be/ejiuml11g8o)
-  - [Script](https://atanuroy22.github.io/jiotv_go/get_started.html#android)
+- **Windows**  
+  - [Watch Video](https://youtu.be/BnNTYTSvVBc)  
+  - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#windows)  
+  - 1.3K+ channels enabled by default  
+
+- **Android**  
+  - [Watch Video](https://youtu.be/ejiuml11g8o)  
+  - [Install Termux](https://github.com/Termux-Monet/termux-monet/releases/tag/v0.119.0-b1-36)  
+  - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#android)
+  - <details close>
+    <summary>For more 1.3K+ channels</summary>
+
+    1. Stop JioTV Go (if running, press `Ctrl+C` in Termux).  
+    2. Install [Files](https://play.google.com/store/apps/details?id=com.marc.files).  
+    3. Download [`jiotv_go.toml`](https://raw.githubusercontent.com/atanuroy22/jiotv_go/refs/heads/develop/configs/jiotv_go.toml).  
+       - Open Files → top-left ☰ → *Your device* → long-press `jiotv_go.toml` → ⋮ → **Copy**.  
+       - ☰ → *Termux:Monet* → **home** → **Paste**.  
+    4. Download [`custom-channels.json`](https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json).  
+       - Files → top-left ☰ → *Your device* → long-press `custom-channels.json` → ⋮ → **Copy**.  
+       - ☰ → *Termux:Monet* → **home** → create folder **configs** → open it → **Paste**.  
+    5. Restart JioTV Go:  
+       ```bash
+       jiotv_go serve
+       ```
+  </details>
 
 _Give us 🌟 on GitHub if you like this project!_
 <!-- 
