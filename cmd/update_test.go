@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -156,6 +157,8 @@ func TestDownloadBinary(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
+	tmpDir := t.TempDir()
+
 	type args struct {
 		url        string
 		outputPath string
@@ -167,22 +170,22 @@ func TestDownloadBinary(t *testing.T) {
 	}{
 		{
 			name:    "Download valid binary",
-			args:    args{url: mockServer.URL + "/valid-binary", outputPath: "/tmp/test-binary"},
+			args:    args{url: mockServer.URL + "/valid-binary", outputPath: filepath.Join(tmpDir, "test-binary")},
 			wantErr: false,
 		},
 		{
 			name:    "Download non-existent binary (404)",
-			args:    args{url: mockServer.URL + "/not-found", outputPath: "/tmp/test-binary-404"},
+			args:    args{url: mockServer.URL + "/not-found", outputPath: filepath.Join(tmpDir, "test-binary-404")},
 			wantErr: true,
 		},
 		{
 			name:    "Download with server error (500)",
-			args:    args{url: mockServer.URL + "/server-error", outputPath: "/tmp/test-binary-500"},
+			args:    args{url: mockServer.URL + "/server-error", outputPath: filepath.Join(tmpDir, "test-binary-500")},
 			wantErr: true,
 		},
 		{
 			name:    "Invalid URL",
-			args:    args{url: "invalid-url", outputPath: "/tmp/test-binary-invalid"},
+			args:    args{url: "invalid-url", outputPath: filepath.Join(tmpDir, "test-binary-invalid")},
 			wantErr: true,
 		},
 	}

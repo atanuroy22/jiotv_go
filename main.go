@@ -35,6 +35,12 @@ func main() {
 			utils.BoolFlag("skip-update-check", "Skip checking for update on startup", "skip-update"),
 		},
 		Before: func(c *cli.Context) error {
+			if !cmd.IsTermux() {
+				if err := cmd.SetupEnvironment(); err != nil {
+					log.Printf("WARN: Failed to setup environment: %v", err)
+				}
+			}
+
 			configPath := c.String("config")
 			// Load the config file first
 			if err := cmd.LoadConfig(configPath); err != nil {

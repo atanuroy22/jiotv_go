@@ -3,7 +3,9 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
@@ -14,6 +16,8 @@ import (
 type JioTVConfig struct {
 	// Enable Or Disable EPG Generation. Default: false
 	EPG bool `yaml:"epg" env:"JIOTV_EPG" json:"epg" toml:"epg"`
+	// External EPG URL to serve from /epg.xml.gz when local generation is unavailable.
+	EPGURL string `yaml:"epg_url" env:"JIOTV_EPG_URL" json:"epg_url" toml:"epg_url"`
 	// Enable Or Disable Debug Mode. Default: false
 	Debug bool `yaml:"debug" env:"JIOTV_DEBUG" json:"debug" toml:"debug"`
 	// Enable Or Disable TS Handler. While TS Handler is enabled, the server will serve the TS files directly from JioTV API. Default: false
@@ -34,6 +38,8 @@ type JioTVConfig struct {
 	LogPath string `yaml:"log_path" env:"JIOTV_LOG_PATH" json:"log_path" toml:"log_path"`
 	// LogToStdout controls logging to stdout/stderr. Default: true
 	LogToStdout bool `yaml:"log_to_stdout" env:"JIOTV_LOG_TO_STDOUT" json:"log_to_stdout" toml:"log_to_stdout"`
+	// CustomChannelsURL is an optional remote JSON URL for custom channels.
+	CustomChannelsURL string `yaml:"custom_channels_url" env:"JIOTV_CUSTOM_CHANNELS_URL" json:"custom_channels_url" toml:"custom_channels_url"`
 	// CustomChannelsFile is the path to custom channels configuration file. Default: ""
 	CustomChannelsFile string `yaml:"custom_channels_file" env:"JIOTV_CUSTOM_CHANNELS_FILE" json:"custom_channels_file" toml:"custom_channels_file"`
 	// DefaultCategories is the list of category IDs to display on the default web page. Default: []
@@ -55,10 +61,91 @@ func (c *JioTVConfig) Load(filename string) error {
 	}
 	if filename == "" {
 		log.Println("INFO: No config file found, using environment variables")
-		return cleanenv.ReadEnv(c)
+		if err := cleanenv.ReadEnv(c); err != nil {
+			return err
+		}
+		c.applyDefaults()
+		return nil
 	}
 	log.Println("INFO: Using config file:", filename)
-	return cleanenv.ReadConfig(filename, c)
+	if err := cleanenv.ReadConfig(filename, c); err != nil {
+		return err
+	}
+	rawCustomChannels := strings.TrimSpace(c.CustomChannelsFile)
+	if rawCustomChannels != "" {
+		log.Println("INFO: Custom channels file (raw):", rawCustomChannels)
+	}
+	c.normalizePaths(filename)
+	resolvedCustomChannels := strings.TrimSpace(c.CustomChannelsFile)
+	if resolvedCustomChannels != "" {
+		log.Println("INFO: Custom channels file (resolved):", resolvedCustomChannels)
+		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
+	}
+	if strings.TrimSpace(c.EPGURL) == "" {
+		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
+	}
+	return nil
+}
+
+func (c *JioTVConfig) applyDefaults() {
+	if strings.TrimSpace(c.CustomChannelsFile) == "" {
+		c.CustomChannelsFile = filepath.Join("configs", "custom-channels.json")
+	}
+	if strings.TrimSpace(c.EPGURL) == "" {
+		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
+	}
+	if strings.TrimSpace(c.CustomChannelsURL) == "" {
+		c.CustomChannelsURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	}
+}
+
+func (c *JioTVConfig) normalizePaths(configFilePath string) {
+	raw := strings.TrimSpace(c.CustomChannelsFile)
+	if raw == "" {
+		return
+	}
+	if filepath.IsAbs(raw) {
+		return
+	}
+	if fileExists(raw) {
+		c.CustomChannelsFile = raw
+		return
+	}
+
+	configDir := filepath.Dir(configFilePath)
+	var relCandidates []string
+	relCandidates = append(relCandidates, raw)
+
+	rawSlash := filepath.ToSlash(raw)
+	if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+		relCandidates = append(relCandidates, strings.TrimPrefix(rawSlash, "configs/"))
+	}
+
+	base := filepath.Base(raw)
+	altBase := strings.ReplaceAll(base, "custom_channels", "custom-channels")
+	if altBase != base {
+		relCandidates = append(relCandidates, altBase)
+		if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+			relCandidates = append(relCandidates, strings.TrimPrefix(filepath.ToSlash(altBase), "configs/"))
+		}
+	}
+
+	for _, rel := range relCandidates {
+		rel = filepath.Clean(filepath.FromSlash(rel))
+		if rel == "" || rel == "." {
+			continue
+		}
+		candidate := filepath.Join(configDir, rel)
+		if fileExists(candidate) {
+			c.CustomChannelsFile = candidate
+			return
+		}
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // Get retrieves the value of the config field specified by key.
@@ -82,10 +169,28 @@ func (*JioTVConfig) Get(key string) interface{} {
 // If no file is found, an empty string is returned.
 func commonFileExists() string {
 	commonFiles := []string{"jiotv_go.yml", "jiotv_go.yaml", "jiotv_go.toml", "jiotv_go.json", "config.json", "config.yml", "config.toml", "config.yaml"}
+
+	exePath, _ := os.Executable()
+	exeDir := filepath.Dir(exePath)
+
 	for _, filename := range commonFiles {
 		// check above common files in current directory
 		if _, err := os.Stat(filename); err == nil {
 			return filename
+		}
+		// check in configs directory
+		if _, err := os.Stat("configs/" + filename); err == nil {
+			return "configs/" + filename
+		}
+		// check in executable directory
+		exeFile := filepath.Join(exeDir, filename)
+		if _, err := os.Stat(exeFile); err == nil {
+			return exeFile
+		}
+		// check in executable directory configs
+		exeConfigFile := filepath.Join(exeDir, "configs", filename)
+		if _, err := os.Stat(exeConfigFile); err == nil {
+			return exeConfigFile
 		}
 	}
 	return ""

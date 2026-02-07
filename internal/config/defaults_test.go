@@ -28,6 +28,7 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultCategories: []int{1, 2, 3},
 				DefaultLanguages:  []int{6, 1},
 				Debug:             true,
+				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
 			},
 		},
 		{
@@ -42,6 +43,7 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultCategories: []int{8, 5},
 				DefaultLanguages:  []int{1},
 				EPG:               false,
+				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
 			},
 		},
 		{
@@ -56,6 +58,7 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultCategories: []int{},
 				DefaultLanguages:  []int{},
 				Title:             "Test App",
+				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
 			},
 		},
 	}

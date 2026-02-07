@@ -96,6 +96,10 @@ func isTermux() bool {
 	return termuxProperty != ""
 }
 
+func IsTermux() bool {
+	return isTermux()
+}
+
 // getConsentFromUser prompts the user to consent to auto start and returns
 // a boolean indicating if consent was given. If running in Termux, consent
 // is assumed. Otherwise, the user is prompted in the terminal.
@@ -116,6 +120,7 @@ func grep(filename, pattern string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -125,7 +130,7 @@ func grep(filename, pattern string) (bool, error) {
 		}
 	}
 
-	return false, file.Close()
+	return false, scanner.Err()
 }
 
 // addToBashrc appends the given line to the specified bashrc file.
@@ -154,16 +159,13 @@ func removeFromBashrc(filename, line string) error {
 	if err != nil {
 		return err
 	}
-	// skipcq: GO-S2307 - file.Close() should be called before return
-	defer file.Close()
 
 	tempFilename := filename + ".tmp"
 	tempFile, err := os.Create(tempFilename)
 	if err != nil {
+		_ = file.Close()
 		return err
 	}
-	// skipcq: GO-S2307 - tempFile.Close() should be called before return
-	defer tempFile.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -177,11 +179,21 @@ func removeFromBashrc(filename, line string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
+		_ = file.Close()
+		_ = tempFile.Close()
 		return err
 	}
 
-	err = os.Rename(tempFilename, filename)
-	if err != nil {
+	if err := file.Close(); err != nil {
+		_ = tempFile.Close()
+		return err
+	}
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+	_ = os.Remove(filename)
+	if err := os.Rename(tempFilename, filename); err != nil {
+		_ = os.Remove(tempFilename)
 		return err
 	}
 

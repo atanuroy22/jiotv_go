@@ -42,3 +42,5 @@ default_categories = []
 # Default languages to display on the web page without filters. Array of language IDs. Default: []
 # Example: default_languages = [1, 6] # Hindi, English
 default_languages = []
+
+epg_url = https://avkb.short.gy/jioepg.xml.gz

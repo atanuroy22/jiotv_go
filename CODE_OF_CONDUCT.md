@@ -126,3 +126,15 @@ enforcement ladder](https://github.com/mozilla/diversity).
 For answers to common questions about this code of conduct, see the FAQ at
 https://www.contributor-covenant.org/faq. Translations are available at
 https://www.contributor-covenant.org/translations.
+
+
+## Project Attribution
+
+This project is built upon and continues the work of the original JioTV Go by **Mohammed Rabil**, the creator of the pioneering repository:
+
+- Original Repository: [JioTV-Go/jiotv_go](https://github.com/JioTV-Go/jiotv_go)
+
+Following the discontinuation of the original project, this repository aims to respectfully continue **Mohammed Rabil’s legacy** while preserving the spirit and functionality of JioTV Go.
+
+- Licensing: We maintain all original licensing information and continue under the terms of the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license. See [LICENSE](./LICENSE) for full details.
+- Contributors: We acknowledge and thank all previous contributors to the original project. See the list of contributors here: [JioTV-Go/jiotv_go contributors](https://github.com/JioTV-Go/jiotv_go/graphs/contributors).

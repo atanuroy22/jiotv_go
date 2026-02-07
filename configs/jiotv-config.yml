@@ -48,3 +48,13 @@ default_categories: []
 # Default languages to display on the web page without filters. Array of language IDs. Default: []
 # Example: [1, 6] # Hindi, English
 default_languages: []
+
+# CustomChannelsURL is the URL to fetch custom channels configuration file. 
+# This allows you to add custom channel sources that will be visible on both web dashboard and IPTV clients.
+# Supports JSON and YAML formats. Default: ""
+# Example: "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+custom_channels_url: ""
+
+# EpgURL is the URL to fetch EPG data. Default: ""
+# Example: "https://avkb.short.gy/jioepg.xml.gz"
+epg_url: "https://avkb.short.gy/jioepg.xml.gz"

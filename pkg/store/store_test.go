@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestInit(t *testing.T) {
 	tests := []struct {
@@ -271,8 +274,8 @@ func TestGetPathPrefix(t *testing.T) {
 			}
 
 			// Should end with a slash
-			if got[len(got)-1] != '/' {
-				t.Errorf("GetPathPrefix() should end with '/', got %s", got)
+			if !os.IsPathSeparator(got[len(got)-1]) {
+				t.Errorf("GetPathPrefix() should end with a path separator, got %s", got)
 			}
 
 			// Should be a valid path (just basic check)

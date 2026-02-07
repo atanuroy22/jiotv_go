@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log" // Added import for *log.Logger type
 	"net/http"
+	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants"
@@ -57,13 +58,34 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	// Config, Logger and Store are assumed to be initialized in main.go
 
 	// if config EPG is true or file epg.xml.gz exists
-	if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
+	if (config.Cfg.EPG && config.Cfg.EPGURL == "") || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz") {
 		go epg.Init()
 	}
+	// only if config EPGURL is not empty
+	// if config.Cfg.EPGURL == "" && (config.Cfg.EPG || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz")) {
+	// 	go epg.Init()
+	// }
 
 	// Start Scheduler
 	scheduler.Init()
 	defer scheduler.Stop()
+
+	if config.Cfg.EPGURL != "" {
+		epgFile := utils.GetPathPrefix() + "epg.xml.gz"
+		if err := epg.DownloadExternalEPG(config.Cfg.EPGURL, epgFile); err != nil {
+			utils.Log.Printf("WARN: External EPG download failed: %v", err)
+		}
+		scheduler.Add("external-epg-refresh", 12*time.Hour, func() error {
+			return epg.DownloadExternalEPG(config.Cfg.EPGURL, epgFile)
+		})
+	}
+
+	go func() {
+		if err := RefreshCustomChannelsFromM3U(); err != nil {
+			utils.Log.Printf("WARN: Custom channels refresh failed: %v", err)
+		}
+	}()
+	scheduler.Add("custom-channels-refresh", 6*time.Hour, RefreshCustomChannelsFromM3U)
 
 	engine := html.NewFileSystem(http.FS(web.GetViewFiles()), ".html")
 	if config.Cfg.Debug {
