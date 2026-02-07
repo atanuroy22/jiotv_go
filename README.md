@@ -11,7 +11,10 @@ JioTV Go, an exciting project that allows you to stream Live TV channels on the 
   - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#windows)  
   - 1.3K+ channels enabled by default  
 
-- **Android**  
+- **Android and TV**
+  - **Download the APK**: [<img src="https://img.shields.io/badge/Download-APK-2ea44f?style=for-the-badge" alt="Download APK">](https://github.com/atanuroy22/jiotv_go_app/releases/latest)
+
+- **Android(Using turmux)**  
   - [Watch Video](https://youtu.be/ejiuml11g8o)  
   - [Install Termux](https://github.com/Termux-Monet/termux-monet/releases/tag/v0.119.0-b1-36)  
   - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#android)
