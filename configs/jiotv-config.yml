@@ -57,4 +57,4 @@ custom_channels_url: ""
 
 # EpgURL is the URL to fetch EPG data. Default: ""
 # Example: "https://avkb.short.gy/jioepg.xml.gz"
-epg_url: ""
+epg_url: "https://avkb.short.gy/jioepg.xml.gz"

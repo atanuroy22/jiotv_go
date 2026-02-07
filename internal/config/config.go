@@ -81,6 +81,7 @@ func (c *JioTVConfig) Load(filename string) error {
 		log.Println("INFO: Custom channels file (resolved):", resolvedCustomChannels)
 		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
 	}
+	c.applyDefaults()
 	return nil
 }
 
