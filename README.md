@@ -12,7 +12,7 @@ JioTV Go, an exciting project that allows you to stream Live TV channels on the 
   - 1.3K+ channels enabled by default  
 
 - **Android and TV**
-  - **Download the APK**: [<img src="https://img.shields.io/badge/Download-APK-2ea44f?style=for-the-badge" alt="Download APK">](https://github.com/atanuroy22/jiotv_go_app/releases/latest)
+  - [<img src="https://img.shields.io/badge/Download-APK-2ea44f?style=for-the-badge" alt="Download APK">](https://github.com/atanuroy22/jiotv_go_app/releases/latest)
 
 - **Android(Using turmux)**  
   - [Watch Video](https://youtu.be/ejiuml11g8o)  
