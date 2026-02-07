@@ -81,7 +81,9 @@ func (c *JioTVConfig) Load(filename string) error {
 		log.Println("INFO: Custom channels file (resolved):", resolvedCustomChannels)
 		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
 	}
-	c.applyDefaults()
+	if strings.TrimSpace(c.EPGURL) == "" {
+		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
+	}
 	return nil
 }
 
