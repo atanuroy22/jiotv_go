@@ -1,81 +1,120 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{.Title}} - Catchup</title>
     <link href="/static/style.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5977886352638887" crossorigin="anonymous"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
     {{ template "styling" . }}
-</head>
-<body class="bg-base-200 min-h-screen">
+  </head>
+  <body class="bg-base-200 min-h-screen">
     {{template "navbar" .}}
 
     <div class="container mx-auto p-4 pt-20">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold">Catchup - {{.Channel}} <span class="text-lg font-normal text-gray-400">({{.CurrentDate}})</span></h1>
-            <div class="join">
-                {{if .ShowPrev}}
-                <a href="?offset={{.PrevOffset}}" class="join-item btn">Previous Day</a>
-                {{else}}
-                <button class="join-item btn btn-disabled">Previous Day</button>
-                {{end}}
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">
+          Catchup - {{.Channel}}
+          <span class="text-lg font-normal text-gray-400"
+            >({{.CurrentDate}})</span
+          >
+        </h1>
+        <div class="join">
+          {{if .ShowPrev}}
+          <a href="?offset={{.PrevOffset}}" class="join-item btn"
+            >Previous Day</a
+          >
+          {{else}}
+          <button class="join-item btn btn-disabled">Previous Day</button>
+          {{end}}
 
-                <a href="?offset=0" class="join-item btn">Today</a>
+          <a href="?offset=0" class="join-item btn">Today</a>
 
-                {{if .ShowNext}}
-                <a href="?offset={{.NextOffset}}" class="join-item btn">Next Day</a>
-                {{else}}
-                <button class="join-item btn btn-disabled">Next Day</button>
-                {{end}}
+          {{if .ShowNext}}
+          <a href="?offset={{.NextOffset}}" class="join-item btn">Next Day</a>
+          {{else}}
+          <button class="join-item btn btn-disabled">Next Day</button>
+          {{end}}
+        </div>
+      </div>
+
+      {{if .Error}}
+      <div class="alert alert-error">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="stroke-current shrink-0 h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <span>{{.Error}}</span>
+      </div>
+      {{else}}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {{if .Data}} {{ range .Data }}
+        <div
+          class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300"
+        >
+          <figure class="relative h-48">
+            <img
+              src="https://jiotvimages.cdn.jio.com/dare_images/shows/{{.episodePoster}}"
+              alt="{{.showname}}"
+              class="w-full h-full object-cover"
+              onerror="this.src='https://jiotvimages.cdn.jio.com/dare_images/images/{{$.Channel}}.png'"
+            />
+            <div
+              class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4"
+            >
+              <h2 class="card-title text-white text-sm">{{.showname}}</h2>
             </div>
+          </figure>
+          <div class="card-body p-4">
+            <div
+              class="flex justify-between items-center text-xs text-gray-400 mb-2"
+            >
+              <span>{{.showtime}} - {{.endtime}}</span>
+            </div>
+            <p class="text-sm line-clamp-2">{{.description}}</p>
+            <div class="card-actions justify-end mt-4">
+              {{if .IsLive}}
+              <a href="/play/{{$.Channel}}" class="btn btn-accent btn-sm w-full"
+                >Watch Live</a
+              >
+              {{else}}
+              <a
+                href="/catchup/play/{{$.Channel}}?start={{.startEpoch}}&end={{.endEpoch}}&srno={{.srno}}&showname={{.showname}}&description={{.description}}&poster={{.episodePoster}}&showtime={{.showtime}}"
+                class="btn btn-primary btn-sm w-full"
+                >Watch Now</a
+              >
+              {{end}}
+            </div>
+          </div>
         </div>
-
-        {{if .Error}}
-        <div class="alert alert-error">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span>{{.Error}}</span>
-        </div>
-        {{else}}
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {{if .Data}}
-                {{ range .Data }}
-                <div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300">
-                    <figure class="relative h-48">
-                        <img src="https://jiotvimages.cdn.jio.com/dare_images/shows/{{.episodePoster}}" alt="{{.showname}}" class="w-full h-full object-cover" onerror="this.src='https://jiotvimages.cdn.jio.com/dare_images/images/{{$.Channel}}.png'"/>
-                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                            <h2 class="card-title text-white text-sm">{{.showname}}</h2>
-                        </div>
-                    </figure>
-                    <div class="card-body p-4">
-                        <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
-                            <span>{{.showtime}} - {{.endtime}}</span>
-                        </div>
-                        <p class="text-sm line-clamp-2">{{.description}}</p>
-                        <div class="card-actions justify-end mt-4">
-                            {{if .IsLive}}
-                            <a href="/play/{{$.Channel}}" class="btn btn-accent btn-sm w-full">Watch Live</a>
-                            {{else}}
-                            <a href="/catchup/play/{{$.Channel}}?start={{.startEpoch}}&end={{.endEpoch}}&srno={{.srno}}&showname={{.showname}}&description={{.description}}&poster={{.episodePoster}}&showtime={{.showtime}}" class="btn btn-primary btn-sm w-full">Watch Now</a>
-                            {{end}}
-                        </div>
-                    </div>
-                </div>
-                {{end}}
-            {{else}}
-                <div class="col-span-full text-center py-10">
-                    <h3 class="text-xl font-semibold">No episodes found for this date.</h3>
-                </div>
-            {{end}}
+        {{end}} {{else}}
+        <div class="col-span-full text-center py-10">
+          <h3 class="text-xl font-semibold">
+            No episodes found for this date.
+          </h3>
         </div>
         {{end}}
+      </div>
+      {{end}}
     </div>
 
     <script src="/static/internal/utils.js"></script>
     <script src="/static/internal/common.js"></script>
     {{template "footer" .}}
-</body>
+  </body>
 </html>
