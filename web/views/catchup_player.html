@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ .Title }}</title>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5977886352638887" crossorigin="anonymous"></script>
     {{ template "styling" . }}
   </head>
 
@@ -34,7 +33,11 @@
             <a href="/catchup/{{ .ChannelID }}" class="btn">
               Back to Catchup
             </a>
-            <button id="aspect-43-toggle" class="btn" onclick="toggleAspectRatio()">
+            <button
+              id="aspect-43-toggle"
+              class="btn"
+              onclick="toggleAspectRatio()"
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -58,9 +61,18 @@
             </h2>
             <div id="epg" class="w-full">
               <div class="card w-full bg-base-200 shadow-xl">
-                <figure><img id="episodePoster" src="{{ .EpisodePoster }}" alt="Episode Poster" onerror="this.src='https://jiotvimages.cdn.jio.com/dare_images/images/{{.ChannelID}}.png'"/></figure>
+                <figure>
+                  <img
+                    id="episodePoster"
+                    src="{{ .EpisodePoster }}"
+                    alt="Episode Poster"
+                    onerror="this.src='https://jiotvimages.cdn.jio.com/dare_images/images/{{.ChannelID}}.png'"
+                  />
+                </figure>
                 <div class="card-body p-4">
-                  <h2 id="showname" class="card-title text-base">{{ .ShowName }}</h2>
+                  <h2 id="showname" class="card-title text-base">
+                    {{ .ShowName }}
+                  </h2>
                   <div class="flex flex-row gap-2 items-center justify-between">
                     <div class="badge badge-info badge-outline">Catchup</div>
                     <div class="text-sm">
@@ -78,55 +90,61 @@
         </div>
       </div>
 
-      <div id="similar_channels_parent" class="mt-6 lg:mx-8 xl:mx-52" style="display: none;">
+      <div
+        id="similar_channels_parent"
+        class="mt-6 lg:mx-8 xl:mx-52"
+        style="display: none"
+      >
         <h2 class="mb-3 text-lg font-bold text-center lg:text-left">
           Similar Channels
         </h2>
-        <div id="similar_channels" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        </div>
+        <div
+          id="similar_channels"
+          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3"
+        ></div>
       </div>
     </div>
-      <script>
-        const channelId = {{ printf "%q" .ChannelID }};
-        let current43Mode = false;
+    <script>
+      const channelId = {{ printf "%q" .ChannelID }};
+      let current43Mode = false;
 
-        const DOWN_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v16.19l6.22-6.22a.75.75 0 1 1 1.06 1.06l-7.5 7.5a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06l6.22 6.22V3a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd" /></svg>';
-        const UP_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M11.47 2.47a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 1 1-1.06 1.06l-6.22-6.22V21a.75.75 0 0 1-1.5 0V4.81l-6.22 6.22a.75.75 0 1 1-1.06-1.06l7.5-7.5Z" clip-rule="evenodd" /></svg>';
+      const DOWN_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v16.19l6.22-6.22a.75.75 0 1 1 1.06 1.06l-7.5 7.5a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06l6.22 6.22V3a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd" /></svg>';
+      const UP_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M11.47 2.47a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 1 1-1.06 1.06l-6.22-6.22V21a.75.75 0 0 1-1.5 0V4.81l-6.22 6.22a.75.75 0 1 1-1.06-1.06l7.5-7.5Z" clip-rule="evenodd" /></svg>';
 
-        function updateAspectRatioUI(is43Mode) {
-          const playerContainer = document.getElementById("player");
-          const button = document.getElementById("aspect-43-toggle");
-          if (is43Mode) {
-            playerContainer.style.aspectRatio = "4/3";
-            button.classList.add("btn-active");
-            button.innerHTML = UP_ARROW_SVG;
-          } else {
-            playerContainer.style.aspectRatio = "16/9";
-            button.classList.remove("btn-active");
-            button.innerHTML = DOWN_ARROW_SVG;
-          }
+      function updateAspectRatioUI(is43Mode) {
+        const playerContainer = document.getElementById("player");
+        const button = document.getElementById("aspect-43-toggle");
+        if (is43Mode) {
+          playerContainer.style.aspectRatio = "4/3";
+          button.classList.add("btn-active");
+          button.innerHTML = UP_ARROW_SVG;
+        } else {
+          playerContainer.style.aspectRatio = "16/9";
+          button.classList.remove("btn-active");
+          button.innerHTML = DOWN_ARROW_SVG;
         }
+      }
 
-        function toggleAspectRatio() {
-          if (current43Mode) {
-            current43Mode = false;
-            localStorage.removeItem("aspectRatio_" + channelId);
-          } else {
-            current43Mode = true;
-            localStorage.setItem("aspectRatio_" + channelId, "4/3");
-          }
-          updateAspectRatioUI(current43Mode);
+      function toggleAspectRatio() {
+        if (current43Mode) {
+          current43Mode = false;
+          localStorage.removeItem("aspectRatio_" + channelId);
+        } else {
+          current43Mode = true;
+          localStorage.setItem("aspectRatio_" + channelId, "4/3");
         }
+        updateAspectRatioUI(current43Mode);
+      }
 
-        document.addEventListener("DOMContentLoaded", function () {
-          const saved43Mode =
-            localStorage.getItem("aspectRatio_" + channelId) === "4/3";
-          if (saved43Mode) {
-            current43Mode = true;
-          }
-          updateAspectRatioUI(current43Mode);
-        });
-      </script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const saved43Mode =
+          localStorage.getItem("aspectRatio_" + channelId) === "4/3";
+        if (saved43Mode) {
+          current43Mode = true;
+        }
+        updateAspectRatioUI(current43Mode);
+      });
+    </script>
     <script src="/static/internal/utils.js"></script>
     <script src="/static/internal/common.js"></script>
     {{ template "footer" . }}
