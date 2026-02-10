@@ -27,6 +27,20 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 	}
 
 	tv_url := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
+	
+	// If quality selection fails (empty), try to fallback to any available quality
+	if tv_url == "" {
+		if liveResult.Mpd.Bitrates.High != "" {
+			tv_url = liveResult.Mpd.Bitrates.High
+		} else if liveResult.Mpd.Bitrates.Auto != "" {
+			tv_url = liveResult.Mpd.Bitrates.Auto
+		} else if liveResult.Mpd.Bitrates.Medium != "" {
+			tv_url = liveResult.Mpd.Bitrates.Medium
+		} else if liveResult.Mpd.Bitrates.Low != "" {
+			tv_url = liveResult.Mpd.Bitrates.Low
+		}
+	}
+
 	if tv_url == "" {
 		tv_url = liveResult.Mpd.Result
 	}
@@ -99,6 +113,9 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	// Get channel ID from URL
 	channelID := c.Params("channelID")
 	quality := c.Query("q")
+	if quality == "" {
+		quality = "high"
+	}
 
 	if isCustomChannel(channelID) {
 		channel, exists := television.GetCustomChannelByID(channelID)
@@ -117,6 +134,10 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	// Fallback to HLS on error or empty URL
 	if err != nil {
 		utils.Log.Printf("Error getting DRM MPD (falling back to HLS): %v", err)
+	} else if drmMpdOutput == nil {
+		utils.Log.Printf("DRM MPD output is nil (falling back to HLS)")
+	} else if drmMpdOutput.PlayUrl == "" {
+		utils.Log.Printf("DRM MPD PlayUrl is empty (falling back to HLS)")
 	}
 	
 	if err != nil || drmMpdOutput == nil || drmMpdOutput.PlayUrl == "" {

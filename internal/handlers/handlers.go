@@ -598,6 +598,9 @@ func ChannelsHandler(c *fiber.Ctx) error {
 func PlayHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
 	quality := c.Query("q")
+	if quality == "" {
+		quality = "high"
+	}
 
 	if isCustomChannel(id) {
 		player_url := "/player/" + id + "?q=" + quality
