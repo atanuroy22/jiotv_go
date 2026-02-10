@@ -13,6 +13,7 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants/headers"
 	internalUtils "github.com/jiotv-go/jiotv_go/v3/internal/utils"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
 	"github.com/valyala/fasthttp"
 )
@@ -24,22 +25,20 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !liveResult.IsDRM {
+
+	tv_url := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
+	if tv_url == "" {
+		tv_url = liveResult.Mpd.Result
+	}
+	if tv_url == "" {
 		return &DrmMpdOutput{
-			IsDRM:       false,
-			PlayUrl:     liveResult.Mpd.Bitrates.Auto,
+			IsDRM:       liveResult.IsDRM,
+			PlayUrl:     "",
 			LicenseUrl:  "",
 			Tv_url_host: "",
 			Tv_url_path: "",
 		}, nil
 	}
-	enc_key, err := secureurl.EncryptURL(liveResult.Mpd.Key)
-	if err != nil {
-		utils.Log.Panicln(err)
-		return nil, err
-	}
-
-	tv_url := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
 
 	channel_enc_url, err := secureurl.EncryptURL(tv_url)
 	if err != nil {
@@ -47,12 +46,22 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 		return nil, err
 	}
 
+	licenseUrl := ""
+	if liveResult.Mpd.Key != "" {
+		enc_key, err := secureurl.EncryptURL(liveResult.Mpd.Key)
+		if err != nil {
+			utils.Log.Panicln(err)
+			return nil, err
+		}
+		licenseUrl = "/drm?auth=" + enc_key + "&channel_id=" + channelID + "&channel=" + channel_enc_url
+	}
+
 	// Quick fix for timesplay channels.
 	if liveResult.AlgoName == "timesplay" {
 		return &DrmMpdOutput{
 			IsDRM:       liveResult.IsDRM,
 			PlayUrl:     tv_url,
-			LicenseUrl:  "/drm?auth=" + enc_key + "&channel_id=" + channelID + "&channel=" + channel_enc_url,
+			LicenseUrl:  licenseUrl,
 			Tv_url_host: "",
 			Tv_url_path: "",
 		}, nil
@@ -79,7 +88,7 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 	return &DrmMpdOutput{
 		IsDRM:       liveResult.IsDRM,
 		PlayUrl:     "/render.mpd?auth=" + channel_enc_url,
-		LicenseUrl:  "/drm?auth=" + enc_key + "&channel_id=" + channelID + "&channel=" + channel_enc_url,
+		LicenseUrl:  licenseUrl,
 		Tv_url_host: tv_url_host,
 		Tv_url_path: tv_url_path,
 	}, nil
@@ -91,12 +100,24 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	channelID := c.Params("channelID")
 	quality := c.Query("q")
 
+	if isCustomChannel(channelID) {
+		channel, exists := television.GetCustomChannelByID(channelID)
+		if !exists {
+			utils.Log.Printf("Custom channel with ID %s not found", channelID)
+			return internalUtils.NotFoundError(c, fmt.Sprintf("Custom channel with ID %s not found", channelID))
+		}
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/player_hls", fiber.Map{
+			"play_url": channel.URL,
+		})
+	}
+
 	drmMpdOutput, err := getDrmMpd(channelID, quality)
 	if err != nil {
 		utils.Log.Panicln(err)
 		return internalUtils.InternalServerError(c, err)
 	}
-	if !drmMpdOutput.IsDRM {
+	if drmMpdOutput.PlayUrl == "" {
 		play_url := utils.BuildHLSPlayURL(quality, channelID)
 		internalUtils.SetCacheHeader(c, 3600)
 		return c.Render("views/player_hls", fiber.Map{
@@ -215,6 +236,19 @@ func MpdHandler(c *fiber.Ctx) error {
 	}
 
 	proxyHost := parsedUrl.Host
+	pathParts := strings.Split(parsedUrl.Path, "/")
+	basePath := strings.Join(pathParts[:len(pathParts)-1], "/") + "/"
+	encProxyHost, err := secureurl.EncryptURL(proxyHost)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	encProxyPath, err := secureurl.EncryptURL(basePath)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	dashBaseURL := fmt.Sprintf("/render.dash/host/%s/path/%s", encProxyHost, encProxyPath)
 
 	// proxyQuery := parsedUrl.RawQuery
 
@@ -250,13 +284,13 @@ func MpdHandler(c *fiber.Ctx) error {
 	// check for match
 	if re.Match(resBody) {
 		resBody = re.ReplaceAllFunc(resBody, func(match []byte) []byte {
-			return []byte("<BaseURL>/render.dash/dash/</BaseURL>")
+			return []byte(fmt.Sprintf("<BaseURL>%s/dash/</BaseURL>", dashBaseURL))
 		})
 	} else {
 		pattern := `<Period(\s+[^>]*?)?\s*\/?>`
 		re = regexp.MustCompile(pattern)
 		resBody = re.ReplaceAllFunc(resBody, func(match []byte) []byte {
-			return []byte(fmt.Sprintf("%s\n<BaseURL>/render.dash/</BaseURL>", match))
+			return []byte(fmt.Sprintf("%s\n<BaseURL>%s/</BaseURL>", match, dashBaseURL))
 		})
 	}
 
@@ -269,6 +303,27 @@ func MpdHandler(c *fiber.Ctx) error {
 func DashHandler(c *fiber.Ctx) error {
 	proxyHost := c.Query("host")
 	proxyPath := c.Query("path")
+	requestPath := string(c.Request().URI().Path())
+	requestQuery := string(c.Request().URI().QueryString())
+
+	if proxyHost == "" || proxyPath == "" {
+		const prefix = "/render.dash/host/"
+		if strings.HasPrefix(requestPath, prefix) {
+			trimmed := strings.TrimPrefix(requestPath, prefix)
+			parts := strings.SplitN(trimmed, "/path/", 2)
+			if len(parts) == 2 {
+				proxyHost = parts[0]
+				remainder := parts[1]
+				pathParts := strings.SplitN(remainder, "/", 2)
+				proxyPath = pathParts[0]
+				if len(pathParts) == 2 {
+					requestPath = "/" + pathParts[1]
+				} else {
+					requestPath = "/"
+				}
+			}
+		}
+	}
 
 	if proxyHost == "" || proxyPath == "" {
 		c.Status(fiber.StatusBadRequest)
@@ -287,10 +342,19 @@ func DashHandler(c *fiber.Ctx) error {
 		return err
 	}
 
-	// remove render.dash from c.Request().URI().RequestURI()
-	requestUri := bytes.Replace(c.Request().URI().RequestURI(), []byte("/render.dash"), []byte(""), 1)
+	if strings.HasPrefix(requestPath, "/render.dash") {
+		requestPath = strings.TrimPrefix(requestPath, "/render.dash")
+		if requestPath == "" {
+			requestPath = "/"
+		}
+	}
+	requestUri := requestPath
+	if requestQuery != "" {
+		requestUri = requestUri + "?" + requestQuery
+	}
 
-	proxyUrl := fmt.Sprintf("https://%s%s/%s", proxyHost, proxyPath, requestUri)
+	proxyPath = strings.TrimSuffix(proxyPath, "/")
+	proxyUrl := fmt.Sprintf("https://%s%s%s", proxyHost, proxyPath, requestUri)
 
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 
