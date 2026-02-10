@@ -129,7 +129,44 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 		})
 	}
 
+	// Ensure tokens are fresh before requesting MPD
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// }
+
 	drmMpdOutput, err := getDrmMpd(channelID, quality)
+
+	// If getting DRM MPD failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Retrying after token refresh...", err)
+		
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+		
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry getDrmMpd
+				drmMpdOutput, err = getDrmMpd(channelID, quality)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained DRM MPD")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
 	
 	// Fallback to HLS on error or empty URL
 	if err != nil {
@@ -141,6 +178,7 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	}
 	
 	if err != nil || drmMpdOutput == nil || drmMpdOutput.PlayUrl == "" {
+		// Use requested quality (default high) for HLS fallback to ensure best available quality first
 		play_url := utils.BuildHLSPlayURL(quality, channelID)
 		internalUtils.SetCacheHeader(c, 3600)
 		return c.Render("views/player_hls", fiber.Map{

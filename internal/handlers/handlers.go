@@ -196,18 +196,64 @@ func LiveHandler(c *fiber.Ctx) error {
 	}
 
 	// For regular JioTV channels, ensure tokens are fresh before making API call
-	if err := EnsureFreshTokens(); err != nil {
-		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-		// Continue with the request - tokens might still work
-	}
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// 	// Continue with the request - tokens might still work
+	// }
 
 	liveResult, err := TV.Live(id)
+
+	// If getting Live stream failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+		
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+		
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry TV.Live
+				liveResult, err = TV.Live(id)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained Live stream")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
 	}
 
-	// Check if liveResult.Bitrates.Auto is empty
+	// Check if liveResult.Bitrates.Auto is empty, try fallback
+	if liveResult.Bitrates.Auto == "" {
+		if liveResult.Bitrates.High != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.High
+		} else if liveResult.Bitrates.Medium != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.Medium
+		} else if liveResult.Bitrates.Low != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.Low
+		} else if liveResult.Mpd.Result != "" {
+			// As a last resort, try using MPD result if it's an HLS compatible URL (unlikely but possible)
+			// or just fail.
+		}
+	}
+
+	// Check if liveResult.Bitrates.Auto is still empty
 	if liveResult.Bitrates.Auto == "" {
 		error_message := "No stream found for channel id: " + id + "Status: " + liveResult.Message
 		utils.Log.Println(error_message)
@@ -258,12 +304,44 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 	}
 
 	// For regular JioTV channels, ensure tokens are fresh before making API call
-	if err := EnsureFreshTokens(); err != nil {
-		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-		// Continue with the request - tokens might still work
-	}
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// 	// Continue with the request - tokens might still work
+	// }
 
 	liveResult, err := TV.Live(id)
+
+	// If getting Live stream failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+		
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+		
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry TV.Live
+				liveResult, err = TV.Live(id)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained Live stream")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
@@ -279,6 +357,18 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 
 	// select quality level based on query parameter
 	liveURL := internalUtils.SelectQuality(quality, Bitrates.Auto, Bitrates.High, Bitrates.Medium, Bitrates.Low)
+	if liveURL == "" {
+		if Bitrates.High != "" {
+			liveURL = Bitrates.High
+		} else if Bitrates.Auto != "" {
+			liveURL = Bitrates.Auto
+		} else if Bitrates.Medium != "" {
+			liveURL = Bitrates.Medium
+		} else if Bitrates.Low != "" {
+			liveURL = Bitrates.Low
+		}
+	}
+
 	if liveResult.Hdnea != "" && !strings.Contains(liveURL, "hdnea=") {
 		sep := "?"
 		if strings.Contains(liveURL, "?") {
@@ -625,10 +715,10 @@ func PlayHandler(c *fiber.Ctx) error {
 	// }
 
 	// Ensure tokens are fresh before making API call for DRM channels
-	if err := EnsureFreshTokens(); err != nil {
-		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-		// Continue with the request - tokens might still work or it might be a custom channel
-	}
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// 	// Continue with the request - tokens might still work or it might be a custom channel
+	// }
 
 	var player_url string
 	// Default to MPD (DRM/High Quality) player if not a custom channel
