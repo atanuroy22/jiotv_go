@@ -628,31 +628,13 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	var player_url string
-	if EnableDRM {
-		// Some sonyLiv channels are DRM protected and others are not
-		// In order to check, we need to make additional request to JioTV API
-		// Quick dirty fix, otherwise we need to refactor entire LiveTV Handler approach
-		if utils.ContainsString(id, SONY_LIST) {
-			liveResult, err := TV.Live(id)
-			if err != nil {
-				utils.Log.Println(err)
-				return internalUtils.InternalServerError(c, err)
-			}
-			// if drm is available, use DRM player
-			if liveResult.IsDRM {
-				player_url = "/mpd/" + id + "?q=" + quality
-			} else {
-				// if not, use HLS player
-				player_url = "/player/" + id + "?q=" + quality
-			}
-		} else if isCustomChannel(id) {
-			player_url = "/player/" + id + "?q=" + quality
-		} else {
-			player_url = "/mpd/" + id + "?q=" + quality
-		}
-	} else {
+	// Default to MPD (DRM/High Quality) player if not a custom channel
+	if isCustomChannel(id) {
 		player_url = "/player/" + id + "?q=" + quality
+	} else {
+		player_url = "/mpd/" + id + "?q=" + quality
 	}
+
 	internalUtils.SetCacheHeader(c, 3600)
 	return c.Render("views/play", fiber.Map{
 		"Title":      Title,

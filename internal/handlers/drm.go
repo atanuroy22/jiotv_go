@@ -113,11 +113,13 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	}
 
 	drmMpdOutput, err := getDrmMpd(channelID, quality)
+	
+	// Fallback to HLS on error or empty URL
 	if err != nil {
-		utils.Log.Panicln(err)
-		return internalUtils.InternalServerError(c, err)
+		utils.Log.Printf("Error getting DRM MPD (falling back to HLS): %v", err)
 	}
-	if drmMpdOutput.PlayUrl == "" {
+	
+	if err != nil || drmMpdOutput == nil || drmMpdOutput.PlayUrl == "" {
 		play_url := utils.BuildHLSPlayURL(quality, channelID)
 		internalUtils.SetCacheHeader(c, 3600)
 		return c.Render("views/player_hls", fiber.Map{
