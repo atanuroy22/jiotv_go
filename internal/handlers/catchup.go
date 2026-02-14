@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -34,9 +36,10 @@ func CatchupHandler(c *fiber.Ctx) error {
 	if err != nil {
 		pkgUtils.Log.Println("Error fetching catchup EPG:", err)
 		return c.Render("views/catchup", fiber.Map{
-			"Title":   Title,
-			"Error":   "Could not fetch catchup data",
-			"Channel": id,
+			"Title":      Title,
+			"Error":      "Could not fetch catchup data",
+			"Channel":    id,
+			"LivePlayURL": "/play/" + id + "?live=true",
 		})
 	}
 
@@ -136,7 +139,8 @@ func CatchupStreamHandler(c *fiber.Ctx) error {
 	}
 
 	redirectURL := fmt.Sprintf("/render.m3u8?auth=%s&channel_key_id=%s", codedUrl, id)
-	if catchupResult.Hdnea != "" {
+	// Ensure we don't double-append hdnea if it's already in the URL
+	if catchupResult.Hdnea != "" && !strings.Contains(targetURL, "hdnea=") {
 		redirectURL += "&hdnea=" + catchupResult.Hdnea
 	}
 	return c.Redirect(redirectURL, fiber.StatusFound)
@@ -171,10 +175,85 @@ func CatchupRenderPlayerHandler(c *fiber.Ctx) error {
 	end := c.Query("end")
 	srno := c.Query("srno")
 	quality := c.Query("q", "")
+	qualityForDrm := quality
+	if qualityForDrm == "" {
+		qualityForDrm = "high"
+	}
 
 	playURL := fmt.Sprintf("/catchup/stream/%s?start=%s&end=%s&srno=%s", id, start, end, srno)
 	if quality != "" {
 		playURL += "&q=" + quality
+	}
+
+	startFmt := start
+	endFmt := end
+	if _, err := strconv.ParseInt(start, 10, 64); err == nil {
+		startInt, _ := strconv.ParseInt(start, 10, 64)
+		endInt, _ := strconv.ParseInt(end, 10, 64)
+		startFmt = time.UnixMilli(startInt).UTC().Format("20060102T150405")
+		endFmt = time.UnixMilli(endInt).UTC().Format("20060102T150405")
+	}
+
+	if err := EnsureFreshTokens(); err != nil {
+		pkgUtils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	}
+
+	catchupResult, err := TV.GetCatchupURL(id, srno, startFmt, endFmt)
+	if err == nil && catchupResult != nil && catchupResult.IsDRM {
+		mpdURL := internalUtils.SelectQuality(qualityForDrm, catchupResult.Mpd.Bitrates.Auto, catchupResult.Mpd.Bitrates.High, catchupResult.Mpd.Bitrates.Medium, catchupResult.Mpd.Bitrates.Low)
+		if mpdURL == "" {
+			if catchupResult.Mpd.Bitrates.High != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.High
+			} else if catchupResult.Mpd.Bitrates.Auto != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Auto
+			} else if catchupResult.Mpd.Bitrates.Medium != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Medium
+			} else if catchupResult.Mpd.Bitrates.Low != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Low
+			}
+		}
+		if mpdURL == "" {
+			mpdURL = catchupResult.Mpd.Result
+		}
+
+		if mpdURL != "" {
+			encMpdUrl, encErr := secureurl.EncryptURL(mpdURL)
+			if encErr == nil {
+				licenseUrl := ""
+				if catchupResult.Mpd.Key != "" {
+					encKey, keyErr := secureurl.EncryptURL(catchupResult.Mpd.Key)
+					if keyErr == nil {
+						licenseUrl = "/drm?auth=" + encKey + "&channel_id=" + id + "&channel=" + encMpdUrl
+					}
+				}
+
+				if catchupResult.AlgoName == "timesplay" {
+					return c.Render("views/player_drm", fiber.Map{
+						"play_url":     mpdURL,
+						"license_url":  licenseUrl,
+						"channel_host": "",
+						"channel_path": "",
+					})
+				}
+
+				parsedTvUrl, parseErr := url.Parse(mpdURL)
+				if parseErr == nil {
+					tvUrlSplit := strings.Split(parsedTvUrl.Path, "/")
+					if len(tvUrlSplit) > 1 {
+						tvUrlPath, pathErr := secureurl.EncryptURL(strings.Join(tvUrlSplit[:len(tvUrlSplit)-1], "/") + "/")
+						tvUrlHost, hostErr := secureurl.EncryptURL(parsedTvUrl.Host)
+						if pathErr == nil && hostErr == nil {
+							return c.Render("views/player_drm", fiber.Map{
+								"play_url":     "/render.mpd?auth=" + encMpdUrl,
+								"license_url":  licenseUrl,
+								"channel_host": tvUrlHost,
+								"channel_path": tvUrlPath,
+							})
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return c.Render("views/player_hls", fiber.Map{
@@ -233,7 +312,7 @@ func getCatchupEPG(id string, offset int) ([]map[string]interface{}, error) {
 				if srno, ok := m["srno"].(float64); ok {
 					m["srno"] = fmt.Sprintf("%.0f", srno)
 				}
-				epgList[i] = m
+				epgList[len(epg)-1-i] = m
 			}
 		}
 		return epgList, nil

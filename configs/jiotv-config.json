@@ -14,5 +14,6 @@
     "default_categories": [],
     "default_languages": [],
     "custom_channels_url": "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json",
-    "epg_url": "https://avkb.short.gy/jioepg.xml.gz"
+    "epg_url": "https://avkb.short.gy/jioepg.xml.gz",
+    "plugins": ["zee5"]
 }

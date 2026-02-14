@@ -280,6 +280,9 @@ func (tv *Television) Render(url string) ([]byte, int, string) {
 		req.Header.Set(key, value)
 	}
 
+	// Override User-Agent to simulate a player, as some CDNs (e.g. for channel 182) block okhttp
+	req.Header.Set("User-Agent", headers.UserAgentPlayTV)
+
 	// If hdnea is provided as query param on URL, also send it as cookie __hdnea__ per downstream requirement
 	if strings.Contains(url, "hdnea=") {
 		// quick parse to extract value
@@ -287,6 +290,10 @@ func (tv *Television) Render(url string) ([]byte, int, string) {
 		for _, p := range strings.Split(q, "&") {
 			if strings.HasPrefix(p, "hdnea=") {
 				token := strings.TrimPrefix(p, "hdnea=")
+				req.Header.SetCookie("__hdnea__", token)
+				break
+			} else if strings.HasPrefix(p, "__hdnea__=") {
+				token := strings.TrimPrefix(p, "__hdnea__=")
 				req.Header.SetCookie("__hdnea__", token)
 				break
 			}
@@ -818,15 +825,20 @@ func (tv *Television) GetCatchupURL(channelID, srno, start, end string) (*LiveUR
 		if u == "" {
 			return ""
 		}
-		idx := strings.Index(u, "hdnea=")
-		if idx == -1 {
+		qIdx := strings.Index(u, "?")
+		if qIdx == -1 {
 			return ""
 		}
-		token := u[idx+len("hdnea="):]
-		if i := strings.IndexByte(token, '&'); i != -1 {
-			token = token[:i]
+		query := u[qIdx+1:]
+		for _, p := range strings.Split(query, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				return strings.TrimPrefix(p, "hdnea=")
+			}
+			if strings.HasPrefix(p, "__hdnea__=") {
+				return strings.TrimPrefix(p, "__hdnea__=")
+			}
 		}
-		return token
+		return ""
 	}
 	hdnea := extractHdneaFromURL(result.Result)
 	if hdnea == "" {

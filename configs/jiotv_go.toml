@@ -39,3 +39,6 @@ custom_channels_url = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/he
 # Epg url
 epg_url = "https://avkb.short.gy/jioepg.xml.gz"
 # epg_url = ""
+
+#Provide  plugin names to activate them EX: plugins = ["zee5"]
+plugins = ["zee5"]
