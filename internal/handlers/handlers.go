@@ -11,7 +11,9 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants/headers"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants/urls"
+	"github.com/jiotv-go/jiotv_go/v3/internal/plugins"
 	internalUtils "github.com/jiotv-go/jiotv_go/v3/internal/utils"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
@@ -246,13 +248,13 @@ func LiveHandler(c *fiber.Ctx) error {
 	// If getting Live stream failed, try refreshing tokens forcefully and retry once
 	if err != nil {
 		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
-		
+
 		// Attempt to refresh tokens forcefully
 		refreshErr := LoginRefreshAccessToken()
 		if refreshErr != nil {
 			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
 		}
-		
+
 		// Also refresh SSO token just in case
 		ssoRefreshErr := LoginRefreshSSOToken()
 		if ssoRefreshErr != nil {
@@ -354,13 +356,13 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 	// If getting Live stream failed, try refreshing tokens forcefully and retry once
 	if err != nil {
 		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
-		
+
 		// Attempt to refresh tokens forcefully
 		refreshErr := LoginRefreshAccessToken()
 		if refreshErr != nil {
 			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
 		}
-		
+
 		// Also refresh SSO token just in case
 		ssoRefreshErr := LoginRefreshSSOToken()
 		if ssoRefreshErr != nil {
@@ -667,6 +669,12 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	if err != nil {
 		return ErrorMessageHandler(c, err)
 	}
+
+	if len(config.Cfg.Plugins) > 0 {
+		pluginChannels := plugins.GetChannels()
+		apiResponse.Result = append(apiResponse.Result, pluginChannels...)
+	}
+
 	// hostUrl should be request URL like http://localhost:5001
 	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
 
@@ -769,10 +777,10 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	// Ensure tokens are fresh before making API call for DRM channels
-	// if err := EnsureFreshTokens(); err != nil {
-	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-	// 	// Continue with the request - tokens might still work or it might be a custom channel
-	// }
+	if err := EnsureFreshTokens(); err != nil {
+		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+		// Continue with the request - tokens might still work or it might be a custom channel
+	}
 
 	var player_url string
 	// Default to MPD (DRM/High Quality) player if not a custom channel
