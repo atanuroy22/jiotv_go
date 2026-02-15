@@ -43,8 +43,43 @@
         </div>
       </div>
 
-      {{if .Error}}
-      <div class="alert alert-error">
+      {{if .Error}} {{if .LivePlayURL}}
+      <div class="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div
+          class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300"
+        >
+          <figure class="relative h-48">
+            <img
+              src="https://jiotvimages.cdn.jio.com/dare_images/images/{{$.Channel}}.png"
+              alt="Watch Live"
+              class="w-full h-full object-cover"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div
+              class="absolute inset-0 hidden items-center justify-center bg-base-200 text-base font-semibold"
+            >
+              {{$.Channel}}
+            </div>
+            <div
+              class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4"
+            >
+              <h2 class="card-title text-white text-sm">Watch Live</h2>
+            </div>
+          </figure>
+          <div class="card-body p-4">
+            <p class="text-sm line-clamp-2">
+              Catchup unavailable for this channel.
+            </p>
+            <div class="card-actions justify-end mt-4">
+              <a href="{{.LivePlayURL}}" class="btn btn-primary btn-sm w-full"
+                >Watch Live</a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+      <div class="alert alert-error mt-6">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="stroke-current shrink-0 h-6 w-6"
@@ -89,7 +124,9 @@
             <p class="text-sm line-clamp-2">{{.description}}</p>
             <div class="card-actions justify-end mt-4">
               {{if .IsLive}}
-              <a href="/play/{{$.Channel}}" class="btn btn-accent btn-sm w-full"
+              <a
+                href="/play/{{$.Channel}}?live=true"
+                class="btn btn-accent btn-sm w-full"
                 >Watch Live</a
               >
               {{else}}

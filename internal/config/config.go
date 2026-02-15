@@ -46,6 +46,7 @@ type JioTVConfig struct {
 	DefaultCategories []int `yaml:"default_categories" env:"JIOTV_DEFAULT_CATEGORIES" json:"default_categories" toml:"default_categories"`
 	// DefaultLanguages is the list of language IDs to display on the default web page. Default: []
 	DefaultLanguages []int `yaml:"default_languages" env:"JIOTV_DEFAULT_LANGUAGES" json:"default_languages" toml:"default_languages"`
+	Plugins          []string `yaml:"plugins" env:"JIOTV_PLUGINS" json:"plugins" toml:"plugins"`
 }
 
 // Cfg is the global config variable
@@ -96,6 +97,9 @@ func (c *JioTVConfig) applyDefaults() {
 	}
 	if strings.TrimSpace(c.CustomChannelsURL) == "" {
 		c.CustomChannelsURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	}
+	if len(c.Plugins) == 0 {
+		c.Plugins = []string{"zee5"}
 	}
 }
 
@@ -158,6 +162,18 @@ func (*JioTVConfig) Get(key string) interface{} {
 		return f.Interface()
 	}
 	return nil
+}
+
+func PluginEnabled(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	for _, plugin := range Cfg.Plugins {
+		if strings.EqualFold(strings.TrimSpace(plugin), name) {
+			return true
+		}
+	}
+	return false
 }
 
 // commonFileExists checks for the existence of common config

@@ -11,11 +11,12 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants/headers"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants/urls"
+	"github.com/jiotv-go/jiotv_go/v3/internal/plugins"
 	internalUtils "github.com/jiotv-go/jiotv_go/v3/internal/utils"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
-	// "github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
@@ -101,6 +102,49 @@ func isCustomChannel(channelID string) bool {
 	return false
 }
 
+func isZee5Channel(channelID string) bool {
+	if !config.PluginEnabled("zee5") {
+		return false
+	}
+	for _, channel := range zee5.GetChannels() {
+		if channel.ID == channelID {
+			return true
+		}
+	}
+	return false
+}
+
+func reorderChannelsForDisplay(channels []television.Channel) []television.Channel {
+	if len(channels) == 0 {
+		return channels
+	}
+	jioChannels := make([]television.Channel, 0, len(channels))
+	customChannels := make([]television.Channel, 0)
+	for _, channel := range channels {
+		if isCustomChannel(channel.ID) {
+			customChannels = append(customChannels, channel)
+		} else {
+			jioChannels = append(jioChannels, channel)
+		}
+	}
+	if config.PluginEnabled("zee5") {
+		if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
+			ordered := make([]television.Channel, 0, len(jioChannels)+len(zee5Channels)+len(customChannels))
+			ordered = append(ordered, jioChannels...)
+			ordered = append(ordered, zee5Channels...)
+			ordered = append(ordered, customChannels...)
+			return ordered
+		}
+	}
+	if len(customChannels) > 0 {
+		ordered := make([]television.Channel, 0, len(jioChannels)+len(customChannels))
+		ordered = append(ordered, jioChannels...)
+		ordered = append(ordered, customChannels...)
+		return ordered
+	}
+	return jioChannels
+}
+
 // IndexHandler handles the index page for `/` route
 func IndexHandler(c *fiber.Ctx) error {
 	// Get all channels
@@ -109,10 +153,7 @@ func IndexHandler(c *fiber.Ctx) error {
 		return ErrorMessageHandler(c, err)
 	}
 
-	// Zee5 channels disabled
-	// if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
-	// 	channels.Result = append(channels.Result, zee5Channels...)
-	// }
+	channels.Result = reorderChannelsForDisplay(channels.Result)
 
 	// Get language and category from query params
 	language := c.Query("language")
@@ -196,18 +237,64 @@ func LiveHandler(c *fiber.Ctx) error {
 	}
 
 	// For regular JioTV channels, ensure tokens are fresh before making API call
-	if err := EnsureFreshTokens(); err != nil {
-		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-		// Continue with the request - tokens might still work
-	}
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// 	// Continue with the request - tokens might still work
+	// }
 
 	liveResult, err := TV.Live(id)
+
+	// If getting Live stream failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry TV.Live
+				liveResult, err = TV.Live(id)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained Live stream")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
 	}
 
-	// Check if liveResult.Bitrates.Auto is empty
+	// Check if liveResult.Bitrates.Auto is empty, try fallback
+	if liveResult.Bitrates.Auto == "" {
+		if liveResult.Bitrates.High != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.High
+		} else if liveResult.Bitrates.Medium != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.Medium
+		} else if liveResult.Bitrates.Low != "" {
+			liveResult.Bitrates.Auto = liveResult.Bitrates.Low
+		} else if liveResult.Mpd.Result != "" {
+			// As a last resort, try using MPD result if it's an HLS compatible URL (unlikely but possible)
+			// or just fail.
+		}
+	}
+
+	// Check if liveResult.Bitrates.Auto is still empty
 	if liveResult.Bitrates.Auto == "" {
 		error_message := "No stream found for channel id: " + id + "Status: " + liveResult.Message
 		utils.Log.Println(error_message)
@@ -258,12 +345,44 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 	}
 
 	// For regular JioTV channels, ensure tokens are fresh before making API call
-	if err := EnsureFreshTokens(); err != nil {
-		utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-		// Continue with the request - tokens might still work
-	}
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// 	// Continue with the request - tokens might still work
+	// }
 
 	liveResult, err := TV.Live(id)
+
+	// If getting Live stream failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry TV.Live
+				liveResult, err = TV.Live(id)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained Live stream")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
@@ -279,6 +398,18 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 
 	// select quality level based on query parameter
 	liveURL := internalUtils.SelectQuality(quality, Bitrates.Auto, Bitrates.High, Bitrates.Medium, Bitrates.Low)
+	if liveURL == "" {
+		if Bitrates.High != "" {
+			liveURL = Bitrates.High
+		} else if Bitrates.Auto != "" {
+			liveURL = Bitrates.Auto
+		} else if Bitrates.Medium != "" {
+			liveURL = Bitrates.Medium
+		} else if Bitrates.Low != "" {
+			liveURL = Bitrates.Low
+		}
+	}
+
 	if liveResult.Hdnea != "" && !strings.Contains(liveURL, "hdnea=") {
 		sep := "?"
 		if strings.Contains(liveURL, "?") {
@@ -467,6 +598,9 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 			if strings.HasPrefix(p, "hdnea=") {
 				c.Request().Header.SetCookie("__hdnea__", strings.TrimPrefix(p, "hdnea="))
 				break
+			} else if strings.HasPrefix(p, "__hdnea__=") {
+				c.Request().Header.SetCookie("__hdnea__", strings.TrimPrefix(p, "__hdnea__="))
+				break
 			}
 		}
 	}
@@ -499,6 +633,26 @@ func RenderTSHandler(c *fiber.Ctx) error {
 		utils.Log.Panicln(err)
 		return err
 	}
+
+	// Check if decoded_url has hdnea or __hdnea__ and set cookie if not already set
+	// This is crucial when hdnea is embedded in the encrypted auth URL but not in the request query params
+	if len(c.Request().Header.Cookie("__hdnea__")) == 0 && strings.Contains(decoded_url, "hdnea=") {
+		qIdx := strings.Index(decoded_url, "?")
+		if qIdx != -1 {
+			params := decoded_url[qIdx+1:]
+			for _, p := range strings.Split(params, "&") {
+				if strings.HasPrefix(p, "hdnea=") {
+					c.Request().Header.SetCookie("__hdnea__", strings.TrimPrefix(p, "hdnea="))
+					break
+				}
+				if strings.HasPrefix(p, "__hdnea__=") {
+					c.Request().Header.SetCookie("__hdnea__", strings.TrimPrefix(p, "__hdnea__="))
+					break
+				}
+			}
+		}
+	}
+
 	return internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT)
 }
 
@@ -514,6 +668,12 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	if err != nil {
 		return ErrorMessageHandler(c, err)
 	}
+
+	if len(config.Cfg.Plugins) > 0 {
+		pluginChannels := plugins.GetChannels()
+		apiResponse.Result = append(apiResponse.Result, pluginChannels...)
+	}
+
 	// hostUrl should be request URL like http://localhost:5001
 	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
 
@@ -522,11 +682,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		// Create an M3U playlist
 		m3uContent := "#EXTM3U x-tvg-url=\"" + hostURL + "/epg.xml.gz\"\n"
 		logoURL := hostURL + "/jtvimage"
-		allChannels := apiResponse.Result
-		// zee5Channels := zee5.GetChannels()
-		// if len(zee5Channels) > 0 {
-		// 	allChannels = append(allChannels, zee5Channels...)
-		// }
+		allChannels := reorderChannelsForDisplay(apiResponse.Result)
 		for _, channel := range allChannels {
 
 			if languages != "" && !utils.ContainsString(television.LanguageMap[channel.Language], strings.Split(languages, ",")) {
@@ -578,17 +734,14 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		return c.SendStream(strings.NewReader(m3uContent))
 	}
 
-		for i, channel := range apiResponse.Result {
+	apiResponse.Result = reorderChannelsForDisplay(apiResponse.Result)
+	for i, channel := range apiResponse.Result {
+		if isZee5Channel(channel.ID) {
+			apiResponse.Result[i].URL = fmt.Sprintf("%s/%s", hostURL, channel.URL)
+		} else {
 			apiResponse.Result[i].URL = fmt.Sprintf("%s/play/%s", hostURL, channel.ID)
 		}
-		// Zee5 channels disabled
-		// zee5Channels := zee5.GetChannels()
-		// if len(zee5Channels) > 0 {
-		// 	for _, ch := range zee5Channels {
-		// 		ch.URL = fmt.Sprintf("%s/%s", hostURL, ch.URL)
-		// 		apiResponse.Result = append(apiResponse.Result, ch)
-		// 	}
-		// }
+	}
 
 	return c.JSON(apiResponse)
 }
@@ -598,6 +751,9 @@ func ChannelsHandler(c *fiber.Ctx) error {
 func PlayHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
 	quality := c.Query("q")
+	if quality == "" {
+		quality = "high"
+	}
 
 	if isCustomChannel(id) {
 		player_url := "/player/" + id + "?q=" + quality
@@ -609,17 +765,15 @@ func PlayHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	// Disable Zee5 play path fallback
-	// _, numErr := strconv.Atoi(id)
-	// if numErr != nil {
-	// 	player_url := "/zee5/" + id + "?q=" + quality
-	// 	internalUtils.SetCacheHeader(c, 3600)
-	// 	return c.Render("views/play", fiber.Map{
-	// 		"Title":      Title,
-	// 		"player_url": player_url,
-	// 		"ChannelID":  id,
-	// 	})
-	// }
+	if isZee5Channel(id) {
+		player_url := "/zee5/" + id + "?q=" + quality
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/play", fiber.Map{
+			"Title":      Title,
+			"player_url": player_url,
+			"ChannelID":  id,
+		})
+	}
 
 	// Ensure tokens are fresh before making API call for DRM channels
 	if err := EnsureFreshTokens(); err != nil {
@@ -628,31 +782,13 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	var player_url string
-	if EnableDRM {
-		// Some sonyLiv channels are DRM protected and others are not
-		// In order to check, we need to make additional request to JioTV API
-		// Quick dirty fix, otherwise we need to refactor entire LiveTV Handler approach
-		if utils.ContainsString(id, SONY_LIST) {
-			liveResult, err := TV.Live(id)
-			if err != nil {
-				utils.Log.Println(err)
-				return internalUtils.InternalServerError(c, err)
-			}
-			// if drm is available, use DRM player
-			if liveResult.IsDRM {
-				player_url = "/mpd/" + id + "?q=" + quality
-			} else {
-				// if not, use HLS player
-				player_url = "/player/" + id + "?q=" + quality
-			}
-		} else if isCustomChannel(id) {
-			player_url = "/player/" + id + "?q=" + quality
-		} else {
-			player_url = "/mpd/" + id + "?q=" + quality
-		}
-	} else {
+	// Default to MPD (DRM/High Quality) player if not a custom channel
+	if isCustomChannel(id) {
 		player_url = "/player/" + id + "?q=" + quality
+	} else {
+		player_url = "/mpd/" + id + "?q=" + quality
 	}
+
 	internalUtils.SetCacheHeader(c, 3600)
 	return c.Render("views/play", fiber.Map{
 		"Title":      Title,

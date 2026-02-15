@@ -7,48 +7,16 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 )
 
-type ttlEntry struct {
-	val     string
-	expires time.Time
-}
-
-type ttlCache struct {
-	items map[string]ttlEntry
-	ttl   time.Duration
-}
-
-func newTTLCache(ttl time.Duration) *ttlCache {
-	return &ttlCache{
-		items: make(map[string]ttlEntry),
-		ttl:   ttl,
-	}
-}
-
-func (c *ttlCache) Get(key string) (string, bool) {
-	e, ok := c.items[key]
-	if !ok {
-		return "", false
-	}
-	if time.Now().After(e.expires) {
-		delete(c.items, key)
-		return "", false
-	}
-	return e.val, true
-}
-
-func (c *ttlCache) Set(key, val string) {
-	c.items[key] = ttlEntry{val: val, expires: time.Now().Add(c.ttl)}
-}
+var cache *expirable.LRU[string, string]
 
 func init() {
-	cookieCache = newTTLCache(time.Hour)
+	cache = expirable.NewLRU[string, string](50, nil, time.Second*3600)
 }
-
-var cookieCache *ttlCache
 
 type ChannelItem struct {
 	ID       string `json:"id"`
@@ -88,6 +56,7 @@ func LiveHandler(c *fiber.Ctx) error {
 		return err
 	}
 	url := ""
+
 	for _, channelItem := range data.Data {
 		if channelItem.ID == id {
 			url = channelItem.URL
@@ -99,7 +68,7 @@ func LiveHandler(c *fiber.Ctx) error {
 		return c.SendString("Channel not found")
 	}
 	uaHash := getMD5Hash(USER_AGENT)
-	cookie, found := cookieCache.Get(uaHash)
+	cookie, found := cache.Get(uaHash)
 	if !found {
 		cookieMap, err := generateCookieZee5(USER_AGENT)
 		if err != nil {
@@ -107,21 +76,20 @@ func LiveHandler(c *fiber.Ctx) error {
 			return err
 		}
 		cookie = cookieMap["cookie"]
-		cookieCache.Set(uaHash, cookie)
+		cache.Add(uaHash, cookie)
 	}
-	hostURL := c.BaseURL()
-	quality := c.Query("q")
-	handlePlaylist(c, true, url+"?"+cookie, hostURL, quality)
+	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
+	handlePlaylist(c, true, url+"?"+cookie, hostURL)
 	return nil
 }
 
 func RenderHandler(c *fiber.Ctx) error {
-	hostURL := c.BaseURL()
+	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
 	coded_url, err := secureurl.DecryptURL(c.Query("auth"))
 	if err != nil {
 		return err
 	}
-	handlePlaylist(c, false, coded_url, hostURL, "")
+	handlePlaylist(c, false, coded_url, hostURL)
 	return nil
 }
 

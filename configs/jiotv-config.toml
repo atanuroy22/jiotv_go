@@ -44,3 +44,6 @@ default_categories = []
 default_languages = []
 
 epg_url = https://avkb.short.gy/jioepg.xml.gz
+
+#Provide  plugin names to activate them EX: plugins = ["zee5"]
+plugins = ["zee5"]

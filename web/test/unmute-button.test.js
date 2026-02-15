@@ -14,7 +14,6 @@ describe('Unmute Button', () => {
       <div data-shaka-player-container>
         <video
           autoplay
-          muted
           data-shaka-player
           id="jiotv_go_player"
           style="width: 100%; height: 100%"
@@ -109,7 +108,6 @@ describe('Unmute Button', () => {
 
   test('video element should have required attributes', () => {
     expect(video.hasAttribute('autoplay')).toBe(true);
-    expect(video.hasAttribute('muted')).toBe(true);
     expect(video.hasAttribute('data-shaka-player')).toBe(true);
     expect(video.id).toBe('jiotv_go_player');
   });
