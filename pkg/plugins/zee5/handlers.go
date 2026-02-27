@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 )
@@ -33,15 +34,28 @@ type DataFile struct {
 }
 
 func readDataFile() (*DataFile, error) {
-	b, err := dataFile.ReadFile("data.json")
+	// First, try to get cached data
+	cachedData := GetCachedZee5Data()
+	if cachedData != nil {
+		return cachedData, nil
+	}
+
+	// If no cached data, try to load from file or embedded source
+	data, err := LoadZee5Data(config.Cfg.Zee5DataFile)
 	if err != nil {
-		return nil, err
+		// If loading fails, try embedded data as last resort
+		b, embErr := dataFile.ReadFile("data.json")
+		if embErr != nil {
+			return nil, embErr
+		}
+		var d DataFile
+		if unmErr := json.Unmarshal(b, &d); unmErr != nil {
+			return nil, unmErr
+		}
+		return &d, nil
 	}
-	var d DataFile
-	if err := json.Unmarshal(b, &d); err != nil {
-		return nil, err
-	}
-	return &d, nil
+
+	return data, nil
 }
 
 //go:embed data.json

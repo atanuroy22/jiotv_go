@@ -77,6 +77,11 @@ func Init() {
 
 	// Initialize custom channels at startup if configured
 	television.InitCustomChannels()
+
+	// Initialize Zee5 data at startup if configured
+	if config.PluginEnabled("zee5") {
+		zee5.InitZee5Data()
+	}
 }
 
 // ErrorMessageHandler handles error messages

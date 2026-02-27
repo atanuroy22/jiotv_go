@@ -16,17 +16,19 @@ import (
 	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
 )
 
 const (
-	RepoOwner       = "atanuroy22"
-	RepoName        = "jiotv_go"
-	Branch          = "develop"
-	BaseURL         = "https://raw.githubusercontent.com/" + RepoOwner + "/" + RepoName + "/" + Branch
-	JioTVGoTomlURL  = BaseURL + "/configs/jiotv_go.toml"
-	CustomChJSONURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	RepoOwner        = "atanuroy22"
+	RepoName         = "jiotv_go"
+	Branch           = "develop"
+	BaseURL          = "https://raw.githubusercontent.com/" + RepoOwner + "/" + RepoName + "/" + Branch
+	JioTVGoTomlURL   = BaseURL + "/configs/jiotv_go.toml"
+	CustomChJSONURL  = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	Zee5DataJSONURL  = "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
 
 	ConfigDir = "configs"
 )
@@ -112,8 +114,34 @@ func SetupEnvironment() error {
 		if unmarshalErr := json.Unmarshal(data, &customChannels); unmarshalErr != nil {
 			fmt.Printf("WARN: Failed to parse custom-channels.json: %v\n", unmarshalErr)
 		} else {
-			fmt.Printf("INFO: Environment setup complete. Downloaded %d channels.\n", len(customChannels.Channels))
-			return nil
+			fmt.Printf("INFO: Loaded %d custom channels.\n", len(customChannels.Channels))
+		}
+	}
+
+	// 3. Download Zee5 data
+	fmt.Println("INFO: Downloading zee5-data.json...")
+	zee5DataPath := filepath.Join(configDir, "zee5-data.json")
+	fmt.Printf("INFO: Zee5 data JSON path: %s\n", zee5DataPath)
+	if err := downloadFile(Zee5DataJSONURL, zee5DataPath); err != nil {
+		if !pathExists(zee5DataPath) {
+			altZee5Data := filepath.Join("configs", "zee5-data.json")
+			if pathExists(altZee5Data) {
+				fmt.Printf("WARN: Failed to download zee5-data.json, using existing: %s\n", altZee5Data)
+				zee5DataPath = altZee5Data
+			} else {
+				fmt.Printf("WARN: Failed to download zee5-data.json: %v\n", err)
+			}
+		} else {
+			fmt.Printf("WARN: Failed to download zee5-data.json, using existing: %s\n", zee5DataPath)
+		}
+	}
+
+	if data, readErr := os.ReadFile(zee5DataPath); readErr == nil {
+		var zee5Data zee5.DataFile
+		if unmarshalErr := json.Unmarshal(data, &zee5Data); unmarshalErr != nil {
+			fmt.Printf("WARN: Failed to parse zee5-data.json: %v\n", unmarshalErr)
+		} else {
+			fmt.Printf("INFO: Loaded %d Zee5 channels.\n", len(zee5Data.Data))
 		}
 	}
 

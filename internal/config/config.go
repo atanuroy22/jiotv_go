@@ -42,6 +42,10 @@ type JioTVConfig struct {
 	CustomChannelsURL string `yaml:"custom_channels_url" env:"JIOTV_CUSTOM_CHANNELS_URL" json:"custom_channels_url" toml:"custom_channels_url"`
 	// CustomChannelsFile is the path to custom channels configuration file. Default: ""
 	CustomChannelsFile string `yaml:"custom_channels_file" env:"JIOTV_CUSTOM_CHANNELS_FILE" json:"custom_channels_file" toml:"custom_channels_file"`
+	// Zee5DataURL is the URL to download Zee5 channels data dynamically. Default: "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
+	Zee5DataURL string `yaml:"zee5_data_url" env:"JIOTV_ZEE5_DATA_URL" json:"zee5_data_url" toml:"zee5_data_url"`
+	// Zee5DataFile is the path to Zee5 data configuration file. Default: "configs/zee5-data.json"
+	Zee5DataFile string `yaml:"zee5_data_file" env:"JIOTV_ZEE5_DATA_FILE" json:"zee5_data_file" toml:"zee5_data_file"`
 	// DefaultCategories is the list of category IDs to display on the default web page. Default: []
 	DefaultCategories []int `yaml:"default_categories" env:"JIOTV_DEFAULT_CATEGORIES" json:"default_categories" toml:"default_categories"`
 	// DefaultLanguages is the list of language IDs to display on the default web page. Default: []
@@ -92,11 +96,17 @@ func (c *JioTVConfig) applyDefaults() {
 	if strings.TrimSpace(c.CustomChannelsFile) == "" {
 		c.CustomChannelsFile = filepath.Join("configs", "custom-channels.json")
 	}
+	if strings.TrimSpace(c.Zee5DataFile) == "" {
+		c.Zee5DataFile = filepath.Join("configs", "zee5-data.json")
+	}
 	if strings.TrimSpace(c.EPGURL) == "" {
 		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
 	}
 	if strings.TrimSpace(c.CustomChannelsURL) == "" {
 		c.CustomChannelsURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	}
+	if strings.TrimSpace(c.Zee5DataURL) == "" {
+		c.Zee5DataURL = "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
 	}
 	if len(c.Plugins) == 0 {
 		c.Plugins = []string{"zee5"}
