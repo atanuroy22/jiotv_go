@@ -89,6 +89,10 @@ func SetupEnvironment() error {
 		}
 	}
 
+	if err := ensurePluginsSettingInToml(tomlPath); err != nil {
+		fmt.Printf("WARN: Failed to patch plugins in jiotv_go.toml: %v\n", err)
+	}
+
 	// 2. Download custom-channels.json
 	fmt.Println("INFO: Downloading custom-channels.json...")
 	customChPath := filepath.Join(configDir, "custom-channels.json")
@@ -123,20 +127,18 @@ func SetupEnvironment() error {
 	zee5DataPath := filepath.Join(configDir, "zee5-data.json")
 	fmt.Printf("INFO: Zee5 data JSON path: %s\n", zee5DataPath)
 	if err := downloadFile(Zee5DataJSONURL, zee5DataPath); err != nil {
-		if !pathExists(zee5DataPath) {
-			altZee5Data := filepath.Join("configs", "zee5-data.json")
-			if pathExists(altZee5Data) {
-				fmt.Printf("WARN: Failed to download zee5-data.json, using existing: %s\n", altZee5Data)
-				zee5DataPath = altZee5Data
-			} else {
-				fmt.Printf("WARN: Failed to download zee5-data.json: %v\n", err)
-			}
-		} else {
+		if pathExists(zee5DataPath) {
 			fmt.Printf("WARN: Failed to download zee5-data.json, using existing: %s\n", zee5DataPath)
+		} else {
+			fmt.Printf("WARN: Failed to download zee5-data.json: %v\n", err)
 		}
 	}
 
 	if data, readErr := os.ReadFile(zee5DataPath); readErr == nil {
+		// Strip UTF-8 BOM if present
+		if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+			data = data[3:]
+		}
 		var zee5Data zee5.DataFile
 		if unmarshalErr := json.Unmarshal(data, &zee5Data); unmarshalErr != nil {
 			fmt.Printf("WARN: Failed to parse zee5-data.json: %v\n", unmarshalErr)
@@ -226,8 +228,52 @@ func dirWritable(dir string) bool {
 	return true
 }
 
-func ensureCustomChannelsSettingInToml(tomlPath string) error {
+// ensurePluginsSettingInToml ensures plugins = ["zee5"] is present in the TOML config.
+// If a plugins line already exists, it is left unchanged.
+func ensurePluginsSettingInToml(tomlPath string) error {
 	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		return err
+	}
+
+	desired := `plugins = ["zee5"]`
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	var out strings.Builder
+	out.Grow(len(data) + 32)
+
+	found := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if strings.HasPrefix(trimmed, "#") {
+			out.WriteString(line)
+			out.WriteByte('\n')
+			continue
+		}
+		if strings.HasPrefix(trimmed, "plugins") {
+			// Line already exists — keep it as-is
+			out.WriteString(line)
+			out.WriteByte('\n')
+			found = true
+			continue
+		}
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if !found {
+		out.WriteString(desired)
+		out.WriteByte('\n')
+	}
+
+	return os.WriteFile(tomlPath, []byte(out.String()), 0644)
+}
+
+func ensureCustomChannelsSettingInToml(tomlPath string) error {	data, err := os.ReadFile(tomlPath)
 	if err != nil {
 		return err
 	}

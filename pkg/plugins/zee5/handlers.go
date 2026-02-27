@@ -1,8 +1,6 @@
 package zee5
 
 import (
-	"embed"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -24,8 +22,37 @@ type ChannelItem struct {
 	Name     string `json:"name"`
 	URL      string `json:"url"`
 	Logo     string `json:"logo"`
-	Language int    `json:"language"`
+	Language string `json:"language"`
 	Slug     string `json:"slug"`
+	Genre    string `json:"genre"`
+	Chno     string `json:"chno"`
+}
+
+// zee5LangToJioTV maps ISO 639-1 language codes from zee5 data to JioTV language IDs.
+var zee5LangToJioTV = map[string]int{
+	"hi": 1,  // Hindi
+	"mr": 2,  // Marathi
+	"pa": 3,  // Punjabi
+	"ur": 4,  // Urdu
+	"bn": 5,  // Bengali
+	"en": 6,  // English
+	"ml": 7,  // Malayalam
+	"ta": 8,  // Tamil
+	"gu": 9,  // Gujarati
+	"or": 10, // Odia
+	"te": 11, // Telugu
+	"bh": 12, // Bhojpuri
+	"kn": 13, // Kannada
+	"as": 14, // Assamese
+	"ne": 15, // Nepali
+	"fr": 16, // French
+}
+
+func zee5LanguageID(code string) int {
+	if id, ok := zee5LangToJioTV[strings.ToLower(code)]; ok {
+		return id
+	}
+	return 18 // Other
 }
 
 type DataFile struct {
@@ -40,26 +67,9 @@ func readDataFile() (*DataFile, error) {
 		return cachedData, nil
 	}
 
-	// If no cached data, try to load from file or embedded source
-	data, err := LoadZee5Data(config.Cfg.Zee5DataFile)
-	if err != nil {
-		// If loading fails, try embedded data as last resort
-		b, embErr := dataFile.ReadFile("data.json")
-		if embErr != nil {
-			return nil, embErr
-		}
-		var d DataFile
-		if unmErr := json.Unmarshal(b, &d); unmErr != nil {
-			return nil, unmErr
-		}
-		return &d, nil
-	}
-
-	return data, nil
+	// Try to load from configured file path
+	return LoadZee5Data(config.Cfg.Zee5DataFile)
 }
-
-//go:embed data.json
-var dataFile embed.FS
 
 func LiveHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
@@ -127,9 +137,11 @@ func RegisterRoutes(app *fiber.App) {
 func GetChannels() []television.Channel {
 	data, err := readDataFile()
 	channels := []television.Channel{}
-	if err != nil {
-		return nil
+
+	if err != nil || data == nil {
+		return channels
 	}
+
 	for _, channelItem := range data.Data {
 		channels = append(channels, television.Channel{
 			ID:       channelItem.ID,
@@ -137,8 +149,8 @@ func GetChannels() []television.Channel {
 			URL:      "zee5/" + channelItem.ID,
 			LogoURL:  channelItem.Logo,
 			Category: 0,
-			Language: channelItem.Language,
-			IsHD:     false,
+			Language: zee5LanguageID(channelItem.Language),
+			IsHD:     strings.Contains(strings.ToLower(channelItem.Name), " hd"),
 			IsCustom: true,
 		})
 	}

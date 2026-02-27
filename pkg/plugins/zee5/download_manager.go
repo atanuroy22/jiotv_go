@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
@@ -19,16 +20,17 @@ var (
 	}
 )
 
+const defaultZee5DataURL = "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
+
 // DownloadZee5Data downloads zee5 data from the configured URL and saves it to the file path
 func DownloadZee5Data() error {
-	dataURL := config.Cfg.Zee5DataURL
-	dataFile := config.Cfg.Zee5DataFile
-
+	dataURL := strings.TrimSpace(config.Cfg.Zee5DataURL)
 	if dataURL == "" {
-		return fmt.Errorf("zee5_data_url not configured")
+		dataURL = defaultZee5DataURL
 	}
 
-	if dataFile == "" {
+	dataFilePath := strings.TrimSpace(config.Cfg.Zee5DataFile)
+	if dataFilePath == "" {
 		return fmt.Errorf("zee5_data_file not configured")
 	}
 
@@ -56,7 +58,7 @@ func DownloadZee5Data() error {
 
 		// If all downloads failed, check if we have a local copy to keep
 		if err != nil {
-			if fileExistsZee5(dataFile) {
+			if fileExistsZee5(dataFilePath) {
 				utils.SafeLogf("WARN: Failed to download zee5 data (keeping existing file): %v", err)
 				return nil
 			}
@@ -66,14 +68,14 @@ func DownloadZee5Data() error {
 	}
 
 	// Ensure directory exists
-	dir := filepath.Dir(dataFile)
+	dir := filepath.Dir(dataFilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		utils.SafeLogf("ERROR: Failed to create directory for zee5 data: %v", err)
 		return err
 	}
 
 	// Save the data to file
-	if err := SaveZee5Data(dataFile, data); err != nil {
+	if err := SaveZee5Data(dataFilePath, data); err != nil {
 		utils.SafeLogf("ERROR: Failed to save zee5 data: %v", err)
 		return err
 	}
@@ -85,6 +87,14 @@ func DownloadZee5Data() error {
 
 	utils.SafeLogf("INFO: Successfully downloaded and cached %d Zee5 channels", len(data.Data))
 	return nil
+}
+
+// stripBOM removes a UTF-8 BOM from the beginning of data if present
+func stripBOM(data []byte) []byte {
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		return data[3:]
+	}
+	return data
 }
 
 // downloadZee5DataFromURL downloads zee5 data from the specified URL
@@ -104,6 +114,9 @@ func downloadZee5DataFromURL(url string) (*DataFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Strip UTF-8 BOM if present
+	body = stripBOM(body)
 
 	var data DataFile
 	if err := json.Unmarshal(body, &data); err != nil {

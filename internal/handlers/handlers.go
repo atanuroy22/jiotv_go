@@ -124,30 +124,22 @@ func reorderChannelsForDisplay(channels []television.Channel) []television.Chann
 		return channels
 	}
 	jioChannels := make([]television.Channel, 0, len(channels))
+	zee5Channels := make([]television.Channel, 0)
 	customChannels := make([]television.Channel, 0)
 	for _, channel := range channels {
 		if isCustomChannel(channel.ID) {
 			customChannels = append(customChannels, channel)
+		} else if isZee5Channel(channel.ID) {
+			zee5Channels = append(zee5Channels, channel)
 		} else {
 			jioChannels = append(jioChannels, channel)
 		}
 	}
-	if config.PluginEnabled("zee5") {
-		if zee5Channels := zee5.GetChannels(); len(zee5Channels) > 0 {
-			ordered := make([]television.Channel, 0, len(jioChannels)+len(zee5Channels)+len(customChannels))
-			ordered = append(ordered, jioChannels...)
-			ordered = append(ordered, zee5Channels...)
-			ordered = append(ordered, customChannels...)
-			return ordered
-		}
-	}
-	if len(customChannels) > 0 {
-		ordered := make([]television.Channel, 0, len(jioChannels)+len(customChannels))
-		ordered = append(ordered, jioChannels...)
-		ordered = append(ordered, customChannels...)
-		return ordered
-	}
-	return jioChannels
+	ordered := make([]television.Channel, 0, len(jioChannels)+len(zee5Channels)+len(customChannels))
+	ordered = append(ordered, jioChannels...)
+	ordered = append(ordered, zee5Channels...)
+	ordered = append(ordered, customChannels...)
+	return ordered
 }
 
 // IndexHandler handles the index page for `/` route
@@ -156,6 +148,11 @@ func IndexHandler(c *fiber.Ctx) error {
 	channels, err := television.Channels()
 	if err != nil {
 		return ErrorMessageHandler(c, err)
+	}
+
+	if len(config.Cfg.Plugins) > 0 {
+		pluginChannels := plugins.GetChannels()
+		channels.Result = append(channels.Result, pluginChannels...)
 	}
 
 	channels.Result = reorderChannelsForDisplay(channels.Result)

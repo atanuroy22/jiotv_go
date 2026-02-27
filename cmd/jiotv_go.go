@@ -10,6 +10,7 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants"
 	"github.com/jiotv-go/jiotv_go/v3/internal/handlers"
 	"github.com/jiotv-go/jiotv_go/v3/internal/middleware"
+	"github.com/jiotv-go/jiotv_go/v3/internal/plugins"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/epg"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/scheduler"
@@ -166,9 +167,7 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	app.Get("/render.mpd", handlers.MpdHandler)
 	app.Use("/render.dash", handlers.DashHandler)
 
-	if config.PluginEnabled("zee5") {
-		zee5.RegisterRoutes(app)
-	}
+	plugins.Init(app)
 
 	if jiotvServerConfig.TLS {
 		if jiotvServerConfig.TLSCertPath == "" || jiotvServerConfig.TLSKeyPath == "" {

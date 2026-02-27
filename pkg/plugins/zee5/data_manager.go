@@ -2,6 +2,7 @@ package zee5
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,9 +19,7 @@ var (
 
 // InitZee5Data initializes zee5 data at startup if configured
 func InitZee5Data() {
-	if config.Cfg.Zee5DataFile != "" {
-		loadAndCacheZee5Data()
-	}
+	loadAndCacheZee5Data()
 }
 
 // ReloadZee5Data reloads zee5 data from file
@@ -34,7 +33,7 @@ func ReloadZee5Data() {
 func loadAndCacheZee5Data() {
 	data, err := LoadZee5Data(config.Cfg.Zee5DataFile)
 	if err != nil {
-		utils.SafeLogf("Error loading zee5 data: %v", err)
+		utils.SafeLogf("WARN: Error loading zee5 data: %v", err)
 		data = nil
 	}
 
@@ -43,7 +42,9 @@ func loadAndCacheZee5Data() {
 	zee5DataMu.Unlock()
 
 	if data != nil && len(data.Data) > 0 {
-		utils.SafeLogf("INFO: Loaded %d Zee5 channels", len(data.Data))
+		utils.SafeLogf("INFO: Zee5 cached %d channels", len(data.Data))
+	} else {
+		utils.SafeLogf("WARN: Zee5 data empty or failed to load, channels will not appear")
 	}
 }
 
@@ -54,19 +55,13 @@ func GetCachedZee5Data() *DataFile {
 	return zee5DataCache
 }
 
-// LoadZee5Data loads zee5 data from file, or from embedded data if file doesn't exist
+// LoadZee5Data loads zee5 data from the configured file path only.
+// Returns an error if the file does not exist or cannot be parsed.
 func LoadZee5Data(filePath string) (*DataFile, error) {
-	// Try to load from file first
-	if filePath != "" && fileExistsZee5(filePath) {
-		data, err := loadZee5DataFromFile(filePath)
-		if err == nil {
-			return data, nil
-		}
-		utils.SafeLogf("WARN: Error loading zee5 data from file: %v, falling back to embedded data", err)
+	if filePath == "" || !fileExistsZee5(filePath) {
+		return nil, fmt.Errorf("zee5 data file not found: %s", filePath)
 	}
-
-	// Fall back to embedded data
-	return loadEmbeddedZee5Data()
+	return loadZee5DataFromFile(filePath)
 }
 
 // loadZee5DataFromFile loads zee5 data from the specified file path
@@ -76,27 +71,17 @@ func loadZee5DataFromFile(filePath string) (*DataFile, error) {
 		return nil, err
 	}
 
-	var dataFile DataFile
-	if err := json.Unmarshal(data, &dataFile); err != nil {
+	// Strip UTF-8 BOM if present
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+
+	var df DataFile
+	if err := json.Unmarshal(data, &df); err != nil {
 		return nil, err
 	}
 
-	return &dataFile, nil
-}
-
-// loadEmbeddedZee5Data loads zee5 data from embedded data.json
-func loadEmbeddedZee5Data() (*DataFile, error) {
-	b, err := dataFile.ReadFile("data.json")
-	if err != nil {
-		return nil, err
-	}
-
-	var d DataFile
-	if err := json.Unmarshal(b, &d); err != nil {
-		return nil, err
-	}
-
-	return &d, nil
+	return &df, nil
 }
 
 // fileExistsZee5 checks if a file exists

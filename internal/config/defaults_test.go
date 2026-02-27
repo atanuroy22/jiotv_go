@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -29,6 +30,8 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultLanguages:  []int{6, 1},
 				Debug:             true,
 				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
+				Zee5DataURL:       "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json",
+				Zee5DataFile:      filepath.Join("configs", "zee5-data.json"),
 			},
 		},
 		{
@@ -44,6 +47,8 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultLanguages:  []int{1},
 				EPG:               false,
 				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
+				Zee5DataURL:       "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json",
+				Zee5DataFile:      filepath.Join("configs", "zee5-data.json"),
 			},
 		},
 		{
@@ -59,6 +64,8 @@ func TestDefaultCategoriesAndLanguagesConfig(t *testing.T) {
 				DefaultLanguages:  []int{},
 				Title:             "Test App",
 				EPGURL:            "https://avkb.short.gy/jioepg.xml.gz",
+				Zee5DataURL:       "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json",
+				Zee5DataFile:      filepath.Join("configs", "zee5-data.json"),
 			},
 		},
 	}
