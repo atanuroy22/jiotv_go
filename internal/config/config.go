@@ -42,6 +42,10 @@ type JioTVConfig struct {
 	CustomChannelsURL string `yaml:"custom_channels_url" env:"JIOTV_CUSTOM_CHANNELS_URL" json:"custom_channels_url" toml:"custom_channels_url"`
 	// CustomChannelsFile is the path to custom channels configuration file. Default: ""
 	CustomChannelsFile string `yaml:"custom_channels_file" env:"JIOTV_CUSTOM_CHANNELS_FILE" json:"custom_channels_file" toml:"custom_channels_file"`
+	// Zee5DataURL is the URL to download Zee5 channels data dynamically. Default: "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
+	Zee5DataURL string `yaml:"zee5_data_url" env:"JIOTV_ZEE5_DATA_URL" json:"zee5_data_url" toml:"zee5_data_url"`
+	// Zee5DataFile is the path to Zee5 data configuration file. Default: "configs/zee5-data.json"
+	Zee5DataFile string `yaml:"zee5_data_file" env:"JIOTV_ZEE5_DATA_FILE" json:"zee5_data_file" toml:"zee5_data_file"`
 	// DefaultCategories is the list of category IDs to display on the default web page. Default: []
 	DefaultCategories []int `yaml:"default_categories" env:"JIOTV_DEFAULT_CATEGORIES" json:"default_categories" toml:"default_categories"`
 	// DefaultLanguages is the list of language IDs to display on the default web page. Default: []
@@ -76,14 +80,29 @@ func (c *JioTVConfig) Load(filename string) error {
 	if rawCustomChannels != "" {
 		log.Println("INFO: Custom channels file (raw):", rawCustomChannels)
 	}
+	rawZee5Data := strings.TrimSpace(c.Zee5DataFile)
+	if rawZee5Data != "" {
+		log.Println("INFO: Zee5 data file (raw):", rawZee5Data)
+	}
 	c.normalizePaths(filename)
 	resolvedCustomChannels := strings.TrimSpace(c.CustomChannelsFile)
 	if resolvedCustomChannels != "" {
 		log.Println("INFO: Custom channels file (resolved):", resolvedCustomChannels)
 		log.Println("INFO: Custom channels file exists:", fileExists(resolvedCustomChannels))
 	}
+	resolvedZee5Data := strings.TrimSpace(c.Zee5DataFile)
+	if resolvedZee5Data != "" {
+		log.Println("INFO: Zee5 data file (resolved):", resolvedZee5Data)
+		log.Println("INFO: Zee5 data file exists:", fileExists(resolvedZee5Data))
+	}
 	if strings.TrimSpace(c.EPGURL) == "" {
 		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
+	}
+	if strings.TrimSpace(c.Zee5DataURL) == "" {
+		c.Zee5DataURL = "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
+	}
+	if strings.TrimSpace(c.Zee5DataFile) == "" {
+		c.Zee5DataFile = filepath.Join("configs", "zee5-data.json")
 	}
 	return nil
 }
@@ -92,11 +111,17 @@ func (c *JioTVConfig) applyDefaults() {
 	if strings.TrimSpace(c.CustomChannelsFile) == "" {
 		c.CustomChannelsFile = filepath.Join("configs", "custom-channels.json")
 	}
+	if strings.TrimSpace(c.Zee5DataFile) == "" {
+		c.Zee5DataFile = filepath.Join("configs", "zee5-data.json")
+	}
 	if strings.TrimSpace(c.EPGURL) == "" {
 		c.EPGURL = "https://avkb.short.gy/jioepg.xml.gz"
 	}
 	if strings.TrimSpace(c.CustomChannelsURL) == "" {
 		c.CustomChannelsURL = "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+	}
+	if strings.TrimSpace(c.Zee5DataURL) == "" {
+		c.Zee5DataURL = "https://raw.githubusercontent.com/atanuroy22/zee5/refs/heads/main/data.json"
 	}
 	if len(c.Plugins) == 0 {
 		c.Plugins = []string{"zee5"}
@@ -104,45 +129,70 @@ func (c *JioTVConfig) applyDefaults() {
 }
 
 func (c *JioTVConfig) normalizePaths(configFilePath string) {
+	// Normalize CustomChannelsFile
 	raw := strings.TrimSpace(c.CustomChannelsFile)
-	if raw == "" {
-		return
-	}
-	if filepath.IsAbs(raw) {
-		return
-	}
-	if fileExists(raw) {
-		c.CustomChannelsFile = raw
-		return
-	}
+	if raw != "" {
+		if !filepath.IsAbs(raw) {
+			if !fileExists(raw) {
+				configDir := filepath.Dir(configFilePath)
+				var relCandidates []string
+				relCandidates = append(relCandidates, raw)
 
-	configDir := filepath.Dir(configFilePath)
-	var relCandidates []string
-	relCandidates = append(relCandidates, raw)
+				rawSlash := filepath.ToSlash(raw)
+				if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+					relCandidates = append(relCandidates, strings.TrimPrefix(rawSlash, "configs/"))
+				}
 
-	rawSlash := filepath.ToSlash(raw)
-	if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
-		relCandidates = append(relCandidates, strings.TrimPrefix(rawSlash, "configs/"))
-	}
+				base := filepath.Base(raw)
+				altBase := strings.ReplaceAll(base, "custom_channels", "custom-channels")
+				if altBase != base {
+					relCandidates = append(relCandidates, altBase)
+					if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
+						relCandidates = append(relCandidates, strings.TrimPrefix(filepath.ToSlash(altBase), "configs/"))
+					}
+				}
 
-	base := filepath.Base(raw)
-	altBase := strings.ReplaceAll(base, "custom_channels", "custom-channels")
-	if altBase != base {
-		relCandidates = append(relCandidates, altBase)
-		if strings.HasPrefix(rawSlash, "configs/") && filepath.Base(configDir) == "configs" {
-			relCandidates = append(relCandidates, strings.TrimPrefix(filepath.ToSlash(altBase), "configs/"))
+				for _, rel := range relCandidates {
+					rel = filepath.Clean(filepath.FromSlash(rel))
+					if rel == "" || rel == "." {
+						continue
+					}
+					candidate := filepath.Join(configDir, rel)
+					if fileExists(candidate) {
+						c.CustomChannelsFile = candidate
+						break
+					}
+				}
+			}
 		}
 	}
 
-	for _, rel := range relCandidates {
-		rel = filepath.Clean(filepath.FromSlash(rel))
-		if rel == "" || rel == "." {
-			continue
-		}
-		candidate := filepath.Join(configDir, rel)
-		if fileExists(candidate) {
-			c.CustomChannelsFile = candidate
-			return
+	// Normalize Zee5DataFile
+	rawZee5 := strings.TrimSpace(c.Zee5DataFile)
+	if rawZee5 != "" {
+		if !filepath.IsAbs(rawZee5) {
+			if !fileExists(rawZee5) {
+				configDir := filepath.Dir(configFilePath)
+				var zee5Candidates []string
+				zee5Candidates = append(zee5Candidates, rawZee5)
+
+				rawZee5Slash := filepath.ToSlash(rawZee5)
+				if strings.HasPrefix(rawZee5Slash, "configs/") && filepath.Base(configDir) == "configs" {
+					zee5Candidates = append(zee5Candidates, strings.TrimPrefix(rawZee5Slash, "configs/"))
+				}
+
+				for _, rel := range zee5Candidates {
+					rel = filepath.Clean(filepath.FromSlash(rel))
+					if rel == "" || rel == "." {
+						continue
+					}
+					candidate := filepath.Join(configDir, rel)
+					if fileExists(candidate) {
+						c.Zee5DataFile = candidate
+						break
+					}
+				}
+			}
 		}
 	}
 }
