@@ -30,9 +30,9 @@ export JIOTV_CUSTOM_CHANNELS_FILE="./configs/custom-channels.json"
 
 > **⚠️ WARNING:** Adding excessive custom channels may impact performance
 
-**Recommended Limit:** Keep custom channels under **1000 channels** for optimal performance.
+**Recommended Limit:** Keep custom channels under **5000 channels** for optimal performance.
 
-**Performance Impact of Excessive Channels (>1000):**
+**Performance Impact of Excessive Channels (>5000):**
 - **Slower Operations**: Channel listing, filtering, and search operations become noticeably slower
 - **Increased Memory Usage**: Higher RAM consumption, especially during startup and operations
 - **Longer Startup Times**: Application takes more time to initialize and load channels
