@@ -803,10 +803,12 @@ func PlayHandler(c *fiber.Ctx) error {
 func PlayerHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
 	quality := c.Query("q")
+	autoplayFallback := c.Query("af") == "1"
 	play_url := utils.BuildHLSPlayURL(quality, id)
 	internalUtils.SetCacheHeader(c, 3600)
 	return c.Render("views/player_hls", fiber.Map{
-		"play_url": play_url,
+		"play_url":          play_url,
+		"autoplay_fallback": autoplayFallback,
 	})
 }
 

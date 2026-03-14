@@ -186,11 +186,16 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 		})
 	}
 
+	hlsFallbackURL := utils.BuildHLSPlayURL(quality, channelID)
+	hlsPlayerFallbackURL := "/player/" + channelID + "?q=" + quality + "&af=1"
+
 	return c.Render("views/player_drm", fiber.Map{
-		"play_url":     drmMpdOutput.PlayUrl,
-		"license_url":  drmMpdOutput.LicenseUrl,
-		"channel_host": drmMpdOutput.Tv_url_host,
-		"channel_path": drmMpdOutput.Tv_url_path,
+		"play_url":          drmMpdOutput.PlayUrl,
+		"license_url":       drmMpdOutput.LicenseUrl,
+		"channel_host":      drmMpdOutput.Tv_url_host,
+		"channel_path":      drmMpdOutput.Tv_url_path,
+		"hls_fallback_url":  hlsFallbackURL,
+		"hls_player_fallback_url": hlsPlayerFallbackURL,
 	})
 }
 

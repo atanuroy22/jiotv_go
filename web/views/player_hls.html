@@ -29,7 +29,8 @@
         live: {{if .is_catchup}}false{{else}}true{{end}},
         seekable: {{if .is_catchup}}true{{else}}false{{end}},
         retry: true,
-        autoplay: false,
+        autoplay: {{if .autoplay_fallback}}true{{else}}false{{end}},
+        muted: {{if .autoplay_fallback}}true{{else}}false{{end}},
         qsel: {},
         asel: {},
         hlsjs: {
