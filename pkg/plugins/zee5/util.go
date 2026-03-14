@@ -3,6 +3,7 @@ package zee5
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/andybalholm/brotli"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
@@ -84,7 +86,18 @@ func fetchPlatformToken(userAgent string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
+
+	// Headers to mimic a real browser request
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -92,20 +105,88 @@ func fetchPlatformToken(userAgent string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Log response status and headers
+	utils.Log.Printf("[zee5] Fetch platform token - Status: %d, Content-Encoding: %s, Content-Type: %s\n",
+		resp.StatusCode, resp.Header.Get("Content-Encoding"), resp.Header.Get("Content-Type"))
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
+	// Read response body - handle gzip and brotli compression
+	var bodyBytes []byte
+	encoding := resp.Header.Get("Content-Encoding")
+
+	if encoding == "gzip" {
+		reader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer reader.Close()
+		bodyBytes, err = io.ReadAll(reader)
+		if err != nil {
+			return "", fmt.Errorf("failed to decompress gzip body: %w", err)
+		}
+		utils.Log.Printf("[zee5] Successfully decompressed gzip body, size: %d bytes\n", len(bodyBytes))
+	} else if encoding == "br" {
+		reader := brotli.NewReader(resp.Body)
+		bodyBytes, err = io.ReadAll(reader)
+		if err != nil {
+			return "", fmt.Errorf("failed to decompress brotli body: %w", err)
+		}
+		utils.Log.Printf("[zee5] Successfully decompressed brotli body, size: %d bytes\n", len(bodyBytes))
+	} else {
+		var err error
+		bodyBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("failed to read response body: %w", err)
+		}
+		utils.Log.Printf("[zee5] Response body size: %d bytes (encoding: %s)\n", len(bodyBytes), encoding)
 	}
 
-	re := regexp.MustCompile(`"gwapiPlatformToken"\s*:\s*"([^"]+)"`)
-	matches := re.FindStringSubmatch(string(bodyBytes))
+	responseStr := string(bodyBytes)
+
+	// Check for various token patterns
+	utils.Log.Printf("[zee5] Checking for token patterns in response...\n")
+
+	// Pattern 1: gwapiPlatformToken
+	re1 := regexp.MustCompile(`"gwapiPlatformToken"\s*:\s*"([^"]+)"`)
+	matches := re1.FindStringSubmatch(responseStr)
 	if len(matches) > 1 {
+		utils.Log.Printf("[zee5] Found gwapiPlatformToken: %s\n", matches[1][:20]+"...")
 		return matches[1], nil
 	}
+	utils.Log.Printf("[zee5] Pattern 'gwapiPlatformToken' not found\n")
+
+	// Pattern 2: platformToken with different format
+	re2 := regexp.MustCompile(`platformToken["\s:]*[=:]?\s*["\']([a-zA-Z0-9\-_]+)["\']`)
+	matches = re2.FindStringSubmatch(responseStr)
+	if len(matches) > 1 {
+		utils.Log.Printf("[zee5] Found platformToken (alt pattern): %s\n", matches[1][:20]+"...")
+		return matches[1], nil
+	}
+	utils.Log.Printf("[zee5] Pattern 'platformToken' (alt) not found\n")
+
+	// Pattern 3: Look for any token in the middle of the response
+	if idx := strings.Index(responseStr, "Token"); idx != -1 {
+		start := idx - 50
+		if start < 0 {
+			start = 0
+		}
+		end := idx + 150
+		if end > len(responseStr) {
+			end = len(responseStr)
+		}
+		utils.Log.Printf("[zee5] Found 'Token' at position %d, context: ...%s...\n", idx, responseStr[start:end])
+	}
+
+	// Log first 1KB of response for debugging
+	preview := responseStr
+	if len(preview) > 1024 {
+		preview = preview[:1024]
+	}
+	utils.Log.Printf("[zee5] Response preview (first 1KB): %s\n", preview)
+
 	return "", fmt.Errorf("platform token not found in page")
 }
 
@@ -126,10 +207,10 @@ func fetchM3u8URL(guestToken, platformToken, ddToken string, userAgent string) (
 	q.Set("device_id", guestToken)
 	q.Set("platform_name", "desktop_web")
 	q.Set("translation", "en")
-	q.Set("user_language", "en,hi,te")
+	q.Set("user_language", "en")
 	q.Set("country", "IN")
 	q.Set("state", "")
-	q.Set("app_version", "4.24.0")
+	q.Set("app_version", "5.7.2")
 	q.Set("user_type", "guest")
 	q.Set("check_parental_control", "false")
 	u.RawQuery = q.Encode()
