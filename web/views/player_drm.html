@@ -81,8 +81,37 @@
       </button>
     </div>
     <script>
+      document.addEventListener("shaka-ui-load-failed", () => {
+        const hlsPlayerFallbackUrl = "{{ .hls_player_fallback_url }}";
+        const hlsFallbackUrl = "{{ .hls_fallback_url }}";
+        const targetUrl = hlsPlayerFallbackUrl || hlsFallbackUrl;
+        if (targetUrl) {
+          window.location.replace(targetUrl);
+        }
+      });
+
       document.addEventListener("shaka-ui-loaded", async () => {
         const video = document.getElementById("jiotv_go_player");
+        const hlsPlayerFallbackUrl = "{{ .hls_player_fallback_url }}";
+        const hlsFallbackUrl = "{{ .hls_fallback_url }}";
+        let hasFallenBack = false;
+
+        const fallbackToHLS = (reason) => {
+          if (hasFallenBack) {
+            return;
+          }
+          const targetUrl = hlsPlayerFallbackUrl || hlsFallbackUrl;
+          if (!targetUrl) {
+            return;
+          }
+          hasFallenBack = true;
+          console.warn("Falling back to HLS:", reason);
+          window.location.replace(targetUrl);
+        };
+
+        const ua = navigator.userAgent.toLowerCase();
+        const isWindows = ua.includes("windows");
+
         const ui = video["ui"];
         const config = {
           seekBarColors: {
@@ -99,8 +128,41 @@
 
         const controls = ui.getControls();
         const player = controls.getPlayer();
+        let playbackStarted = false;
+
+        const markPlaybackStarted = () => {
+          playbackStarted = true;
+        };
+
+        video.addEventListener("playing", markPlaybackStarted);
+        video.addEventListener("loadeddata", markPlaybackStarted);
+
+        // Default to unmuted playback. If autoplay is blocked, we fallback to muted.
+        video.muted = false;
+
+        player.addEventListener("error", (event) => {
+          const errorCode = event && event.detail && event.detail.code;
+          console.error("Shaka player error event", event && event.detail);
+          // Fallback for fatal DRM/network/content errors.
+          if (errorCode === 6001 || errorCode === 1001 || errorCode === 3016) {
+            fallbackToHLS("Shaka player error " + errorCode);
+          }
+        });
 
         const licenseUrl = "{{ .license_url }}";
+
+        if (licenseUrl) {
+          const support = await shaka.Player.probeSupport();
+          const drmSupport = support.drm || {};
+          const hasWidevineSupport = Object.keys(drmSupport).some((key) =>
+            key.includes("com.widevine.alpha")
+          );
+          if (!hasWidevineSupport) {
+            fallbackToHLS("Widevine not supported");
+            return;
+          }
+        }
+
         if (licenseUrl) {
           player.configure({
             drm: {
@@ -150,24 +212,31 @@
 
         try {
           await player.load("{{ .play_url }}");
+          try {
+            video.muted = false;
+            await video.play();
+          } catch (autoplayError) {
+            // Retry once in muted mode for stricter autoplay policies.
+            console.warn("Autoplay blocked, retrying muted", autoplayError);
+            video.muted = true;
+            try {
+              await video.play();
+            } catch (retryError) {
+              console.warn("Muted autoplay retry failed", retryError);
+            }
+          }
           console.log("The video has now been loaded!");
         } catch (e) {
           console.error("Error loading video", e);
-          switch (e.code) {
-            case 1001:
-              alert("The channel is not available.");
-              break;
-            case 6001:
-              alert(
-                "Widevine DRM content can't be played in http (except localhost). Please enable https in server."
-              );
-              break;
-            default:
-              alert(
-                "An error occurred. Please try again later. Shaka Error code: " +
-                  e.code
-              );
-          }
+          fallbackToHLS("player.load failed: " + (e && e.code ? e.code : "unknown"));
+        }
+
+        if (isWindows) {
+          setTimeout(() => {
+            if (!playbackStarted && !video.error) {
+              fallbackToHLS("MPD playback timeout on Windows");
+            }
+          }, 15000);
         }
 
         // Unmute button functionality
