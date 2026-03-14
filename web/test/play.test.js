@@ -151,15 +151,23 @@ describe('Play Page Functions', () => {
     expect(channelIds).toContain('different');
     expect(channelIds).not.toContain('current');
     
-    // Test that randomization works by running multiple times
-    // (This is probabilistic, but with Fisher-Yates shuffle, order should vary)
-    const orders = new Set();
-    for (let i = 0; i < 10; i++) {
-      const result = getSimilarChannels(channelsData, currentChannel, 10);
-      orders.add(result.map(ch => ch.channel_id).join(','));
+    // Make shuffle behavior deterministic to avoid probabilistic failures.
+    const randomSpy = jest.spyOn(Math, 'random');
+    try {
+      randomSpy.mockReturnValueOnce(0.1); // j = 0 for i = 1 -> swap
+      const shuffledOrder = getSimilarChannels(channelsData, currentChannel, 10)
+        .map(ch => ch.channel_id)
+        .join(',');
+
+      randomSpy.mockReturnValueOnce(0.9); // j = 1 for i = 1 -> no swap
+      const unshuffledOrder = getSimilarChannels(channelsData, currentChannel, 10)
+        .map(ch => ch.channel_id)
+        .join(',');
+
+      expect(shuffledOrder).not.toBe(unshuffledOrder);
+    } finally {
+      randomSpy.mockRestore();
     }
-    // With 3 items and 10 runs, we should get at least 2 different orders (highly likely)
-    expect(orders.size).toBeGreaterThan(1);
   });
 
   test('renderSimilarChannels creates correct DOM structure', () => {
