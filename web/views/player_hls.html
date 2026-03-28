@@ -26,19 +26,12 @@
       var player = flowplayer("#jiotv_go_player", {
         src: "{{ .play_url }}",
         auto_orient: true,
-        live: {{if .is_catchup}}false{{else}}true{{end}},
-        seekable: {{if .is_catchup}}true{{else}}false{{end}},
-        retry: {{if .is_catchup}}false{{else}}true{{end}},
-        autoplay: {{if .autoplay_fallback}}true{{else}}false{{end}},
-        muted: {{if .autoplay_fallback}}true{{else}}false{{end}},
+        live: true,
+        seekable: true,
+        retry: true,
+        autoplay: false,
         qsel: {},
         asel: {},
-        hlsjs: {
-            // Disable capping level to player size to allow high quality on small screens
-            capLevelToPlayerSize: false,
-            // Try to start with best quality if possible (auto mode usually does this based on bandwidth)
-            startLevel: -1
-        },
         ui: flowplayer.ui.USE_THIN_CONTROLBAR,
       });
       player.on(flowplayer.events.FULLSCREEN_ENTER, (e) => {

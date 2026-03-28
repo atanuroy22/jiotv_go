@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"fmt"
-	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -447,18 +446,22 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 		return err
 	}
 
-	parsedURL, parseErr := neturl.Parse(decoded_url)
-	if parseErr == nil {
-		queryValues := parsedURL.Query()
-		for key, values := range queryValues {
-			if len(values) > 0 {
-				c.Request().Header.SetCookie(key, values[0])
+	// extract params from url
+	params := strings.Split(decoded_url, "?")[1]
+
+	// set params as cookies as JioTV uses cookies to authenticate
+	for _, param := range strings.Split(params, "&") {
+		key := strings.Split(param, "=")[0]
+		value := strings.Split(param, "=")[1]
+		c.Request().Header.SetCookie(key, value)
+	}
+	// ensure __hdnea__ cookie exists if available from params
+	if strings.Contains(params, "hdnea=") {
+		for _, p := range strings.Split(params, "&") {
+			if strings.HasPrefix(p, "hdnea=") {
+				c.Request().Header.SetCookie("__hdnea__", strings.TrimPrefix(p, "hdnea="))
+				break
 			}
-		}
-		if hdnea := queryValues.Get("hdnea"); hdnea != "" {
-			c.Request().Header.SetCookie("__hdnea__", hdnea)
-		} else if hdnea := queryValues.Get("__hdnea__"); hdnea != "" {
-			c.Request().Header.SetCookie("__hdnea__", hdnea)
 		}
 	}
 
