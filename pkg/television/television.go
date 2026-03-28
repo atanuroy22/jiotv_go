@@ -105,6 +105,13 @@ func InitCustomChannels() {
 	}
 }
 
+// ReloadCustomChannels refreshes the custom channel cache from configured file.
+func ReloadCustomChannels() {
+	if config.Cfg.CustomChannelsFile != "" {
+		loadAndCacheCustomChannels()
+	}
+}
+
 // getCustomChannelByID efficiently looks up a custom channel by ID
 func getCustomChannelByID(channelID string) (Channel, bool) {
 	if customChannelsCacheMap == nil {
