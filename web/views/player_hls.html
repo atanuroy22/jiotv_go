@@ -28,7 +28,7 @@
         auto_orient: true,
         live: {{if .is_catchup}}false{{else}}true{{end}},
         seekable: {{if .is_catchup}}true{{else}}false{{end}},
-        retry: {{if .is_catchup}}false{{else}}true{{end}},
+        retry: true,
         autoplay: {{if .autoplay_fallback}}true{{else}}false{{end}},
         muted: {{if .autoplay_fallback}}true{{else}}false{{end}},
         qsel: {},

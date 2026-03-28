@@ -12,5 +12,5 @@ const (
 	ErrUnsupportedChannelsFormat = "unsupported or invalid custom channels file format. Supported formats: .json, .yml, .yaml, or valid JSON/YAML content"
 
 	// Limits and thresholds
-	MaxRecommendedChannels = 2000
+	MaxRecommendedChannels = 5000
 )

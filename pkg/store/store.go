@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/BurntSushi/toml"
@@ -116,14 +117,14 @@ func GetPathPrefix() string {
 
 	// if pathPrefix does not exist, create it
 	if _, err := os.Stat(pathPrefix); os.IsNotExist(err) {
-		if err := os.Mkdir(pathPrefix, 0755); err != nil {
+		if err := os.MkdirAll(pathPrefix, 0755); err != nil {
 			panic(fmt.Errorf("GetPathPrefix: error creating pathPrefix: %v", err))
 		}
 	}
 
-	// if pathPrefix does not have a trailing slash, add it
-	if pathPrefix[len(pathPrefix)-1] != '/' {
-		pathPrefix += "/"
+	pathPrefix = filepath.Clean(pathPrefix)
+	if !strings.HasSuffix(pathPrefix, string(os.PathSeparator)) {
+		pathPrefix += string(os.PathSeparator)
 	}
 
 	return pathPrefix

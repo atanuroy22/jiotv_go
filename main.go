@@ -27,7 +27,7 @@ func main() {
 		Usage:     "Stream JioTV on any device",
 		HelpName:  "jiotv_go",
 		Version:   version,
-		Copyright: "© JioTV Go (https://github.com/jiotv-go/jiotv_go)",
+		Copyright: "© JioTV Go (https://github.com/atanuroy22/jiotv_go)",
 		Compiled:  time.Now(),
 		Suggest:   true,
 		Flags: []cli.Flag{
@@ -35,6 +35,12 @@ func main() {
 			utils.BoolFlag("skip-update-check", "Skip checking for update on startup", "skip-update"),
 		},
 		Before: func(c *cli.Context) error {
+			if !cmd.IsTermux() {
+				if err := cmd.SetupEnvironment(); err != nil {
+					log.Printf("WARN: Failed to setup environment: %v", err)
+				}
+			}
+
 			configPath := c.String("config")
 			// Load the config file first
 			if err := cmd.LoadConfig(configPath); err != nil {

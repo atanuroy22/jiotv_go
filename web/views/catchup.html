@@ -107,7 +107,7 @@
               src="https://jiotvimages.cdn.jio.com/dare_images/shows/{{.episodePoster}}"
               alt="{{.showname}}"
               class="w-full h-full object-cover"
-              onerror="const attempts = parseInt(this.dataset.onerrorAttempts || '0', 10); if (attempts < 3) { this.dataset.onerrorAttempts = attempts + 1; this.src = 'https://jiotvimages.cdn.jio.com/dare_images/images/{{$.Channel}}.png'; } else { this.style.display = 'none'; }"
+              onerror="this.src='https://jiotvimages.cdn.jio.com/dare_images/images/{{$.Channel}}.png'"
             />
             <div
               class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4"
@@ -131,7 +131,7 @@
               >
               {{else}}
               <a
-                href="/catchup/play/{{$.Channel}}?start={{.startEpoch}}&end={{.endEpoch}}&srno={{.srno}}&showname={{.showname | urlquery}}&description={{.description | urlquery}}&poster={{.episodePoster | urlquery}}&showtime={{.showtime | urlquery}}"
+                href="/catchup/play/{{$.Channel}}?start={{.startEpoch}}&end={{.endEpoch}}&srno={{.srno}}&showname={{.showname}}&description={{.description}}&poster={{.episodePoster}}&showtime={{.showtime}}"
                 class="btn btn-primary btn-sm w-full"
                 >Watch Now</a
               >

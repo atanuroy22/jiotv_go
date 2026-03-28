@@ -236,6 +236,7 @@ func GetChannels() []television.Channel {
 			Category: 0,
 			Language: channelItem.Language.JioTVID(),
 			IsHD:     strings.Contains(strings.ToLower(channelItem.Name), " hd"),
+			IsCustom: true,
 		})
 	}
 	return channels

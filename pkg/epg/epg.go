@@ -1,6 +1,7 @@
 package epg
 
 import (
+	"bytes"
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/json"
@@ -35,6 +36,23 @@ const (
 	defaultRandomHour   = 2
 	defaultRandomMinute = 30
 )
+
+func responseBody(resp *fasthttp.Response) ([]byte, error) {
+	if bytes.Contains(resp.Header.Peek("Content-Encoding"), []byte("gzip")) {
+		return resp.BodyGunzip()
+	}
+	return resp.Body(), nil
+}
+
+func timeFromEpoch(epoch int64) (time.Time, bool) {
+	if epoch <= 0 {
+		return time.Time{}, false
+	}
+	if epoch < 100000000000 {
+		return time.Unix(epoch, 0), true
+	}
+	return time.UnixMilli(epoch), true
+}
 
 // Init initializes EPG generation and schedules it for the next day.
 func Init() {
@@ -132,11 +150,22 @@ func genXML() ([]byte, error) {
 	// Create channels and programmes slices with initial capacity
 	var channels []Channel
 	var programmes []Programme
+	var programmesMu sync.Mutex
+
+	deviceID := utils.GetDeviceID()
+	crmID := ""
+	uniqueID := ""
+	if creds, err := utils.GetJIOTVCredentials(); err == nil && creds != nil {
+		crmID = creds.CRM
+		uniqueID = creds.UniqueID
+	}
 
 	// Define a worker function for fetching EPG data
 	fetchEPG := func(channel Channel, bar *progressbar.ProgressBar) {
 		req := fasthttp.AcquireRequest()
-		req.Header.SetUserAgent(headers.UserAgentOkHttp)
+		utils.SetCommonJioTVHeaders(req, deviceID, crmID, uniqueID)
+		req.Header.Set(headers.Accept, headers.AcceptJSON)
+		req.Header.SetMethod("GET")
 		defer fasthttp.ReleaseRequest(req)
 
 		resp := fasthttp.AcquireResponse()
@@ -150,20 +179,42 @@ func genXML() ([]byte, error) {
 				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: %v", channel.ID, offset, err)
 				continue
 			}
+			status := resp.StatusCode()
+			if status == fasthttp.StatusNotFound {
+				break
+			}
+			if status != fasthttp.StatusOK {
+				utils.Log.Printf("Error fetching EPG for channel %d, offset %d: status %d, body: %s", channel.ID, offset, status, resp.Body())
+				continue
+			}
+
+			body, err := responseBody(resp)
+			if err != nil {
+				utils.Log.Printf("Error reading EPG response body for channel %d, offset %d: %v", channel.ID, offset, err)
+				continue
+			}
 
 			var epgResponse EPGResponse
-			if err := json.Unmarshal(resp.Body(), &epgResponse); err != nil {
+			if err := json.Unmarshal(body, &epgResponse); err != nil {
 				// Handle error
 				utils.Log.Printf("Error unmarshaling EPG response for channel %d, offset %d: %v", channel.ID, offset, err)
 				// Print response body for debugging
-				utils.Log.Printf("Response body: %s", resp.Body())
+				utils.Log.Printf("Response body: %s", body)
 				continue
 			}
 
 			for _, programme := range epgResponse.EPG {
-				startTime := formatTime(time.UnixMilli(programme.StartEpoch))
-				endTime := formatTime(time.UnixMilli(programme.EndEpoch))
-				programmes = append(programmes, NewProgramme(channel.ID, startTime, endTime, programme.Title, programme.Description, programme.ShowCategory, programme.Poster))
+				startT, okStart := timeFromEpoch(programme.StartEpoch)
+				endT, okEnd := timeFromEpoch(programme.EndEpoch)
+				if !okStart || !okEnd {
+					continue
+				}
+				startTime := formatTime(startT)
+				endTime := formatTime(endT)
+				p := NewProgramme(channel.ID, startTime, endTime, programme.Title, programme.Description, programme.ShowCategory, programme.Poster)
+				programmesMu.Lock()
+				programmes = append(programmes, p)
+				programmesMu.Unlock()
 			}
 		}
 		bar.Add(1)
@@ -175,6 +226,15 @@ func genXML() ([]byte, error) {
 	resp, err := utils.MakeHTTPRequest(utils.HTTPRequestConfig{
 		URL:    CHANNEL_URL,
 		Method: "GET",
+		Headers: map[string]string{
+			headers.UserAgent:  headers.UserAgentOkHttp,
+			headers.Accept:     headers.AcceptJSON,
+			headers.DeviceType: headers.DeviceTypePhone,
+			headers.OS:         headers.OSAndroid,
+			"appkey":           "NzNiMDhlYzQyNjJm",
+			"lbcookie":         "1",
+			"usertype":         "JIO",
+		},
 	}, client)
 	if err != nil {
 		return nil, utils.LogAndReturnError(err, "Failed to fetch channels")
@@ -182,7 +242,14 @@ func genXML() ([]byte, error) {
 	defer fasthttp.ReleaseResponse(resp)
 
 	var channelsResponse ChannelsResponse
-	if err := utils.ParseJSONResponse(resp, &channelsResponse); err != nil {
+	if resp.StatusCode() != fasthttp.StatusOK {
+		return nil, fmt.Errorf("failed to fetch channels: status %d, body: %s", resp.StatusCode(), resp.Body())
+	}
+	body, err := responseBody(resp)
+	if err != nil {
+		return nil, utils.LogAndReturnError(err, "Failed to read channels response body")
+	}
+	if err := json.Unmarshal(body, &channelsResponse); err != nil {
 		return nil, utils.LogAndReturnError(err, "Failed to parse channels response")
 	}
 
@@ -266,7 +333,6 @@ func GenXMLGz(filename string) error {
 	return nil
 }
 
-// DownloadExternalEPG downloads an EPG payload from an external URL and writes it atomically.
 func DownloadExternalEPG(epgURL, filename string) error {
 	client := utils.GetRequestClient()
 

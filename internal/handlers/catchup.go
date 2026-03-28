@@ -36,9 +36,9 @@ func CatchupHandler(c *fiber.Ctx) error {
 	if err != nil {
 		pkgUtils.Log.Println("Error fetching catchup EPG:", err)
 		return c.Render("views/catchup", fiber.Map{
-			"Title":       Title,
-			"Error":       "Could not fetch catchup data",
-			"Channel":     id,
+			"Title":      Title,
+			"Error":      "Could not fetch catchup data",
+			"Channel":    id,
 			"LivePlayURL": "/play/" + id + "?live=true",
 		})
 	}
@@ -109,9 +109,9 @@ func CatchupStreamHandler(c *fiber.Ctx) error {
 		pkgUtils.Log.Println("Warning: srno is missing for catchup request")
 	}
 
-	startInt, errStart := strconv.ParseInt(start, 10, 64)
-	endInt, errEnd := strconv.ParseInt(end, 10, 64)
-	if errStart == nil && errEnd == nil {
+	if _, err := strconv.ParseInt(start, 10, 64); err == nil {
+		startInt, _ := strconv.ParseInt(start, 10, 64)
+		endInt, _ := strconv.ParseInt(end, 10, 64)
 		start = time.UnixMilli(startInt).UTC().Format("20060102T150405")
 		end = time.UnixMilli(endInt).UTC().Format("20060102T150405")
 	}
@@ -187,9 +187,9 @@ func CatchupRenderPlayerHandler(c *fiber.Ctx) error {
 
 	startFmt := start
 	endFmt := end
-	startInt, errStart := strconv.ParseInt(start, 10, 64)
-	endInt, errEnd := strconv.ParseInt(end, 10, 64)
-	if errStart == nil && errEnd == nil {
+	if _, err := strconv.ParseInt(start, 10, 64); err == nil {
+		startInt, _ := strconv.ParseInt(start, 10, 64)
+		endInt, _ := strconv.ParseInt(end, 10, 64)
 		startFmt = time.UnixMilli(startInt).UTC().Format("20060102T150405")
 		endFmt = time.UnixMilli(endInt).UTC().Format("20060102T150405")
 	}
@@ -202,19 +202,18 @@ func CatchupRenderPlayerHandler(c *fiber.Ctx) error {
 	if err == nil && catchupResult != nil && catchupResult.IsDRM {
 		mpdURL := internalUtils.SelectQuality(qualityForDrm, catchupResult.Mpd.Bitrates.Auto, catchupResult.Mpd.Bitrates.High, catchupResult.Mpd.Bitrates.Medium, catchupResult.Mpd.Bitrates.Low)
 		if mpdURL == "" {
-			candidates := []string{
-				catchupResult.Mpd.Bitrates.High,
-				catchupResult.Mpd.Bitrates.Auto,
-				catchupResult.Mpd.Bitrates.Medium,
-				catchupResult.Mpd.Bitrates.Low,
-				catchupResult.Mpd.Result,
+			if catchupResult.Mpd.Bitrates.High != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.High
+			} else if catchupResult.Mpd.Bitrates.Auto != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Auto
+			} else if catchupResult.Mpd.Bitrates.Medium != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Medium
+			} else if catchupResult.Mpd.Bitrates.Low != "" {
+				mpdURL = catchupResult.Mpd.Bitrates.Low
 			}
-			for _, candidate := range candidates {
-				if candidate != "" {
-					mpdURL = candidate
-					break
-				}
-			}
+		}
+		if mpdURL == "" {
+			mpdURL = catchupResult.Mpd.Result
 		}
 
 		if mpdURL != "" {

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -11,7 +11,7 @@
         background-color: black;
         overflow-y: hidden;
       }
-      
+
       /* Unmute button styling */
       .unmute-overlay {
         position: absolute;
@@ -38,18 +38,18 @@
         transform: translate(-50%, -50%) scale(1.1);
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
       }
-      
+
       .unmute-overlay svg {
         width: 32px;
         height: 32px;
         fill: currentColor;
       }
-      
+
       .unmute-overlay.hidden {
         opacity: 0;
         pointer-events: none;
       }
-      
+
       /* Increase Shaka Player control icons size */
       .shaka-video-container .material-icons-round {
         font-size: 28px !important;
@@ -70,7 +70,7 @@
         id="jiotv_go_player"
         style="width: 100%; height: 100%"
       ></video>
-      
+
       <!-- Unmute button overlay -->
       <button id="unmute-btn" class="unmute-overlay" title="Click to unmute">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -169,12 +169,6 @@
               servers: {
                 "com.widevine.alpha": licenseUrl,
               },
-              advanced: {
-                "com.widevine.alpha": {
-                  videoRobustness: "SW_SECURE_CRYPTO",
-                  audioRobustness: "SW_SECURE_CRYPTO",
-                },
-              },
             },
           });
         }
@@ -247,7 +241,7 @@
 
         // Unmute button functionality
         const unmuteBtn = document.getElementById("unmute-btn");
-        
+
         const updateUnmuteButton = () => {
           if (video.muted) {
             unmuteBtn.classList.remove("hidden");
@@ -255,16 +249,16 @@
             unmuteBtn.classList.add("hidden");
           }
         };
-        
+
         unmuteBtn.addEventListener("click", () => {
           video.muted = false;
           video.volume = 0.8; // Set to 80% volume
           updateUnmuteButton();
         });
-        
+
         // Listen for mute state changes (e.g., via Shaka UI controls)
         video.addEventListener("volumechange", updateUnmuteButton);
-        
+
         // Initial state
         updateUnmuteButton();
 
