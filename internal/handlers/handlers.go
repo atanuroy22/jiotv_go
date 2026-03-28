@@ -696,7 +696,8 @@ func ChannelsHandler(c *fiber.Ctx) error {
 			}
 
 			var channelURL string
-			if channel.IsCustom && channel.URL != "" {
+			isCustomOrPlugin := strings.HasPrefix(channel.ID, "cc_") || strings.HasPrefix(channel.URL, "zee5/")
+			if isCustomOrPlugin && channel.URL != "" {
 				if quality != "" {
 					channelURL = fmt.Sprintf("%s/%s?q=%s", hostURL, channel.URL, quality)
 				} else {
