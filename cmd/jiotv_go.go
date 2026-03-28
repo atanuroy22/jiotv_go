@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"log" // Added import for *log.Logger type
 	"net/http"
+	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
 	"github.com/jiotv-go/jiotv_go/v3/internal/constants"
 	"github.com/jiotv-go/jiotv_go/v3/internal/handlers"
 	"github.com/jiotv-go/jiotv_go/v3/internal/middleware"
+	"github.com/jiotv-go/jiotv_go/v3/internal/plugins"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/epg"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/scheduler"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
 	"github.com/jiotv-go/jiotv_go/v3/web"
@@ -56,13 +59,44 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	// Config, Logger and Store are assumed to be initialized in main.go
 
 	// if config EPG is true or file epg.xml.gz exists
-	if config.Cfg.EPG || utils.FileExists("epg.xml.gz") {
+	if (config.Cfg.EPG && config.Cfg.EPGURL == "") || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz") {
 		go epg.Init()
 	}
+	// only if config EPGURL is not empty
+	// if config.Cfg.EPGURL == "" && (config.Cfg.EPG || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz")) {
+	// 	go epg.Init()
+	// }
 
 	// Start Scheduler
 	scheduler.Init()
 	defer scheduler.Stop()
+
+	if config.Cfg.EPGURL != "" {
+		epgFile := utils.GetPathPrefix() + "epg.xml.gz"
+		if err := epg.DownloadExternalEPG(config.Cfg.EPGURL, epgFile); err != nil {
+			utils.Log.Printf("WARN: External EPG download failed: %v", err)
+		}
+		scheduler.Add("external-epg-refresh", 12*time.Hour, func() error {
+			return epg.DownloadExternalEPG(config.Cfg.EPGURL, epgFile)
+		})
+	}
+
+	go func() {
+		if err := RefreshCustomChannelsFromM3U(); err != nil {
+			utils.Log.Printf("WARN: Custom channels refresh failed: %v", err)
+		}
+	}()
+	scheduler.Add("custom-channels-refresh", 6*time.Hour, RefreshCustomChannelsFromM3U)
+
+	// Refresh Zee5 data on startup and every 4 hours
+	if config.PluginEnabled("zee5") {
+		go func() {
+			if err := zee5.RefreshZee5DataFromURL(); err != nil {
+				utils.Log.Printf("WARN: Zee5 data refresh failed: %v", err)
+			}
+		}()
+		scheduler.Add("zee5-data-refresh", 4*time.Hour, zee5.RefreshZee5DataFromURL)
+	}
 
 	engine := html.NewFileSystem(http.FS(web.GetViewFiles()), ".html")
 	if config.Cfg.Debug {
@@ -132,6 +166,8 @@ func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 
 	app.Get("/render.mpd", handlers.MpdHandler)
 	app.Use("/render.dash", handlers.DashHandler)
+
+	plugins.Init(app)
 
 	if jiotvServerConfig.TLS {
 		if jiotvServerConfig.TLSCertPath == "" || jiotvServerConfig.TLSKeyPath == "" {
