@@ -1,0 +1,100 @@
+name: "Build and Release"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+      - "README.md"
+      - "LICENSE"
+      - "docs/**"
+      - "scripts/**"
+      - "**.sh"
+      - "**.md"
+
+concurrency:
+  group: ${{ github.ref }}-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go 📦
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Setup GIT 📂
+        run: |
+          # setup git
+          git config user.name "GitHub Action"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Increment version 📈
+        id: gen_tag
+        shell: bash
+        run: |
+          # Fetch the latest develop branch
+          git fetch origin develop
+
+          # Checkout develop branch
+          git checkout develop
+
+          # Run increment version script to update VERSION file
+          chmod +x ./scripts/increment-version.sh
+          ./scripts/increment-version.sh
+
+          new_version=$(cat VERSION)
+
+          # Commit and push the VERSION file update to develop
+          git add VERSION && git commit -m "Bump version to $new_version" && git push origin develop
+
+          # Switch back to main and merge the VERSION update from develop
+          git checkout main
+          git merge develop --no-ff -m "Merge version bump from develop"
+          git push origin main
+
+          IFS='.' read -r major minor patch <<< "$new_version"
+
+          # Mirrors tags
+          git tag -fa $major -m "Mirror tag $new_version"
+          git tag -fa $major.$minor -m "Mirror tag $new_version"
+          git push --tags --force
+          # Set the new tag.
+          echo "tag=$new_version" >> $GITHUB_OUTPUT
+
+      - name: Setup android NDK
+        shell: bash
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+          unzip -qq android-ndk-r26b-linux.zip
+          echo "$PWD/android-ndk-r26b/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Build Executables 🗄️ 🔃
+        shell: bash
+        run: |
+          chmod +x ./scripts/build-binaries.sh
+          ./scripts/build-binaries.sh
+
+      - name: Release 📦
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          draft: false
+          prerelease: false
+          tag_name: ${{ steps.gen_tag.outputs.tag }}
+          files: |
+            ./bin/*
+          generate_release_notes: true
+          discussion_category_name: releases
+          token: ${{ secrets.GITHUB_TOKEN }}

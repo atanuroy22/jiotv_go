@@ -1,2 +1,109 @@
-# jiotv_go
-JioTV + Zee (Android 5+)...Note:- This for educational purpose and all of the contents are taken from the sources available freely
+# JioTV Go 📺
+
+JioTV Go, an exciting project that allows you to stream Live TV channels on the web and IPTV. It's a web wrapper around the JioTV Android app, utilizing the same API to fetch and stream channels.
+
+<!-- Ready to dive in? Download the latest binary for your operating system from [here](https://github.com/atanuroy22/jiotv_go/releases/latest), and explore the [documentation](https://atanuroy22.github.io/jiotv_go/) to start your JioTV Go adventure! 🚀 -->
+
+## For easy setup watch the video
+
+- **Windows**  
+  - [Watch Video](https://youtu.be/BnNTYTSvVBc)  
+  - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#windows)  
+  - 1.3K+ channels enabled by default  
+
+- **Android and TV**
+  - [<img src="https://img.shields.io/badge/Download-APK-2ea44f?style=for-the-badge" alt="Download APK">](https://github.com/atanuroy22/jiotv_go_app/releases/latest)
+
+- **Android(Using turmux)**  
+  - [Watch Video](https://youtu.be/ejiuml11g8o)  
+  - [Install Termux](https://github.com/Termux-Monet/termux-monet/releases/tag/v0.119.0-b1-36)  
+  - [Autorun Script](https://atanuroy22.github.io/jiotv_go/get_started.html#android)
+  - <details close>
+    <summary>For more 1.3K+ channels</summary>
+
+    1. Stop JioTV Go (if running, press `Ctrl+C` in Termux).  
+    2. Install [Files](https://play.google.com/store/apps/details?id=com.marc.files).  
+    3. Download [`jiotv_go.toml`](https://raw.githubusercontent.com/atanuroy22/jiotv_go/refs/heads/develop/configs/jiotv_go.toml).  
+       - Open Files → top-left ☰ → *Your device* → long-press `jiotv_go.toml` → ⋮ → **Copy**.  
+       - ☰ → *Termux:Monet* → **home** → **Paste**.  
+    4. Download [`custom-channels.json`](https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json).  
+       - Files → top-left ☰ → *Your device* → long-press `custom-channels.json` → ⋮ → **Copy**.  
+       - ☰ → *Termux:Monet* → **home** → create folder **configs** → open it → **Paste**.  
+    5. Restart JioTV Go:  
+       ```bash
+       jiotv_go serve
+       ```
+  </details>
+
+_Give us 🌟 on GitHub if you like this project!_
+<!-- 
+We have video tutorials for [Windows](https://youtu.be/BnNTYTSvVBc), and [Android](https://youtu.be/ejiuml11g8o) users. Please watch them if you are unsure about the installation process. -->
+
+## Features 🌟
+
+- 📺 Stream Live TV channels, just like in the JioTV Android app.
+- 🎬 M3U playlist support for IPTV.
+- 🌐 Web interface for watching Live TV.
+- 📅 EPG (Electronic Program Guide) support in compressed GZipped XML or JSON format.
+- 🎥 Quality selection (Low, Medium, High) supported.
+- ⚙️ Configurable port and host.
+- 🔐 Authentication using Jio number with OTP.
+- 👥 Support for multiple clients simultaneously.
+- 🚀 Written in Go, ensuring it's fast, lightweight, and portable.
+- 💻 Command-line interface for server management and self-update.
+- 🔄 Background start and stop feature.
+
+Get Started with JioTV Go by following the [Get Started](https://atanuroy22.github.io/jiotv_go/get_started.html) guide.
+
+## Table of Contents
+
+<details close>
+  <summary>Click to expand/collapse</summary>
+  
+- [JioTV Go 📺](#jiotv-go-)
+  - [Project Attribution](#project-attribution)(Special thanks to Mohammed Rabil & all contributors)
+  - [Features 🌟](#features-)
+  - [Table of Contents](#table-of-contents)
+  - [Documentation](#documentation)
+  - [Join the community on Telegram:](#join-the-community-on-telegram)
+  - [Star History](#star-history)
+  - [Contributors](#contributors)
+  - [Let's Make JioTV Go Better Together! 🤝](#lets-make-jiotv-go-better-together-)
+    - [**Report Bugs**](#report-bugs)
+    - [**Ready to Contribute? Join the Journey! 🚀**](#ready-to-contribute-join-the-journey-)
+  - [**License: Attribution 4.0 International (CC BY 4.0)**](#license-attribution-40-international-cc-by-40)
+</details>
+
+## Documentation
+
+The complete documentation for JioTV Go is available at https://atanuroy22.github.io/jiotv_go/ 📖
+
+## Join the community on Telegram:
+
+<!-- - [Announcement Channel (`jiotv_go`)](https://telegram.me/jiotv_go) -->
+- [Support Group (`jiotv_go_chat`)](https://telegram.me/atanuroy2222)
+<!-- 
+## Star History
+
+<a href="https://star-history.com/#atanuroy22/jiotv_go&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=atanuroy22/jiotv_go&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=atanuroy22/jiotv_go&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=atanuroy22/jiotv_go&type=Date" />
+  </picture>
+</a> -->
+
+<!-- ## Contributors
+
+[![Contributors](https://contributors-img.web.app/image?repo=atanuroy22/jiotv_go)](https://github.com/atanuroy22/jiotv_go/graphs/contributors) -->
+
+### **Report Bugs**
+
+Found a pesky bug? No worries! Please help us improve JioTV Go by creating an issue [here](https://github.com/atanuroy22/jiotv_go/issues/new/choose). Be sure to include detailed steps to reproduce the bug, describe the expected behavior, and, if possible, attach screenshots. Your feedback is invaluable!
+
+### **Ready to Contribute? Join the Journey! 🚀**
+
+We wholeheartedly welcome your contributions. If you have ideas, fixes, or enhancements in mind, don't hesitate to create a pull request with your changes. For significant alterations, start by creating an issue to discuss your plans with us. Together, we can make JioTV Go even more incredible.
+
+<!-- for building local -->
+<!-- powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path .\build | Out-Null; go build -trimpath -o .\build\jiotv_go.exe ." -->

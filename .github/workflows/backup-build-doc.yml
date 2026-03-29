@@ -1,0 +1,66 @@
+name: Build MdBook Documentation for Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      # as docs have symbolic links to the scripts folder, we need to include it
+      - "scripts/**"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: pages
+      url: https://jiotv-go.pages.me
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install mdbook
+        shell: bash
+        run: |
+          tag=$(curl 'https://api.github.com/repos/rust-lang/mdbook/releases/latest' | jq -r '.tag_name')
+          url="https://github.com/rust-lang/mdbook/releases/download/${tag}/mdbook-${tag}-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir mdbook
+          curl -sSL $url | tar -xz --directory=./mdbook
+          echo `pwd`/mdbook >> $GITHUB_PATH
+      
+      - name: Prepopulate docs install scripts
+        run: |
+          rm -f docs/install.sh docs/install.ps1 || true
+          cp -f --remove-destination scripts/install.sh docs/install.sh
+          cp -f --remove-destination scripts/install.ps1 docs/install.ps1
+
+      - name: Build Book
+        run: |
+          mdbook build docs
+      
+      - name: Prepare site
+        run: |
+          cp scripts/install.sh docs/book/install.sh
+          cp scripts/install.ps1 docs/book/install.ps1
+          touch docs/book/.nojekyll
+      
+      # - name: Check Cloudflare credentials
+      #   if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' || secrets.CLOUDFLARE_ACCOUNT_ID == '' }}
+      #   run: |
+      #     echo "Cloudflare credentials missing: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not set."
+      #     echo "Skipping Cloudflare Pages publish. Configure repository secrets to enable deploy."
+
+      # - name: Publish to Cloudflare Pages
+      #   if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+      #   uses: cloudflare/pages-action@v1
+      #   with:
+      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      #     projectName: jiotv-go
+      #     directory: docs/book
+      #     # Optional: Enable this if you want to have GitHub Deployments triggered
+      #     gitHubToken: ${{ secrets.GITHUB_TOKEN }}

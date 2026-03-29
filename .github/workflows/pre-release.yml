@@ -1,0 +1,74 @@
+name: Pre-Release on Push
+
+on:
+  push:
+    branches:
+      - "develop"
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
+      - "package.json"
+      - "package-lock.json"
+      - "tailwind.config.js"
+      - ".gitignore"
+      - ".dockerignore"
+      - "Dockerfile"
+      - "scripts/**"
+      - "**.sh"
+      - "docs/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}-pre-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  pre-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Setup Go 📦
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Setup android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+          unzip -qq android-ndk-r26b-linux.zip
+          echo "$PWD/android-ndk-r26b/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Build Executables 🗄️ 🔃
+        run: |
+          chmod +x ./scripts/build-binaries.sh
+          ./scripts/build-binaries.sh
+
+      - name: Delete previous release 🗑️
+        run: |
+          tag=$(git describe --tags --match "${{ github.ref_name }}.[0-9]*.[0-9]*.[0-9]*" --abbrev=0)
+          gh release delete -y $tag --cleanup-tag
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate tag
+        id: gen_tag
+        run: |
+          echo "tag=${{ github.ref_name }}.$(date +'%Y.%m.%d.%H.%M')" >> $GITHUB_OUTPUT
+
+      - name: Release 📦
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          draft: false
+          prerelease: true
+          tag_name: ${{ steps.gen_tag.outputs.tag }}
+          files: |
+            ./bin/*
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}

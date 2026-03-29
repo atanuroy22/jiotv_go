@@ -1,0 +1,63 @@
+# Example config file for JioTV Go
+# All fields mentioned below are optional.
+
+# Enable Or Disable EPG Generation. Default: false
+epg: false
+
+# Enable Or Disable Debug Mode. Default: false
+debug: false
+
+# Enable Or Disable TS Handler. While TS Handler is enabled, the server will serve the TS files directly from JioTV API. Default: false
+disable_ts_handler: false
+
+# Enable Or Disable Logout feature. Default: true
+disable_logout: false
+
+# Enable Or Disable DRM. As DRM is not supported by most of the players, it is disabled by default. Default: false
+drm: true
+
+# Title of the webpage. Default: JioTV Go
+title: ""
+
+# Enable Or Disable URL Encryption. URL Encryption prevents hackers from injecting URLs into the server. Default: true
+# If you think it is unnecessary, you can disable it. But it is recommended to enable it.
+disable_url_encryption: false
+
+# Folder path for all JioTV Go related files. 
+path_prefix: ""
+
+# Proxy URL. Proxy is useful to bypass geo-restrictions and ip-restrictions for JioTV API. Default: ""
+proxy: ""
+
+# LogPath is the directory for log files. Default: ""
+log_path: ""
+
+# LogToStdout controls logging to stdout/stderr. Default: false
+log_to_stdout: false
+
+# CustomChannelsFile is the path to custom channels configuration file. 
+# This allows you to add custom channel sources that will be visible on both web dashboard and IPTV clients.
+# Supports JSON and YAML formats. Default: ""
+# Example: "./configs/custom-channels.json" or "./configs/custom-channels.yml"
+custom_channels_file: ""
+
+# Default categories to display on the web page without filters. Array of category IDs. Default: []
+# Example: [8, 5] # Entertainment, Movies
+default_categories: []
+
+# Default languages to display on the web page without filters. Array of language IDs. Default: []
+# Example: [1, 6] # Hindi, English
+default_languages: []
+
+# CustomChannelsURL is the URL to fetch custom channels configuration file. 
+# This allows you to add custom channel sources that will be visible on both web dashboard and IPTV clients.
+# Supports JSON and YAML formats. Default: ""
+# Example: "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json"
+custom_channels_url: ""
+
+# EpgURL is the URL to fetch EPG data. Default: ""
+# Example: "https://avkb.short.gy/jioepg.xml.gz"
+epg_url: "https://avkb.short.gy/jioepg.xml.gz"
+
+#Provide  plugin names to activate them EX: plugins = ["zee5"]
+plugins: ["zee5"]
