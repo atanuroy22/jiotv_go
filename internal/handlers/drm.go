@@ -1,0 +1,433 @@
+package handlers
+
+import (
+	"bytes"
+	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/proxy"
+	"github.com/jiotv-go/jiotv_go/v3/internal/constants/headers"
+	internalUtils "github.com/jiotv-go/jiotv_go/v3/internal/utils"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
+	"github.com/valyala/fasthttp"
+)
+
+// getDrmMpd returns required properties for rendering DRM MPD
+func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
+	// Get live stream URL from JioTV API
+	liveResult, err := TV.Live(channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	tv_url := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
+	
+	// If quality selection fails (empty), try to fallback to any available quality
+	if tv_url == "" {
+		if liveResult.Mpd.Bitrates.High != "" {
+			tv_url = liveResult.Mpd.Bitrates.High
+		} else if liveResult.Mpd.Bitrates.Auto != "" {
+			tv_url = liveResult.Mpd.Bitrates.Auto
+		} else if liveResult.Mpd.Bitrates.Medium != "" {
+			tv_url = liveResult.Mpd.Bitrates.Medium
+		} else if liveResult.Mpd.Bitrates.Low != "" {
+			tv_url = liveResult.Mpd.Bitrates.Low
+		}
+	}
+
+	if tv_url == "" {
+		tv_url = liveResult.Mpd.Result
+	}
+	if tv_url == "" {
+		return &DrmMpdOutput{
+			IsDRM:       liveResult.IsDRM,
+			PlayUrl:     "",
+			LicenseUrl:  "",
+			Tv_url_host: "",
+			Tv_url_path: "",
+		}, nil
+	}
+
+	channel_enc_url, err := secureurl.EncryptURL(tv_url)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return nil, err
+	}
+
+	licenseUrl := ""
+	if liveResult.Mpd.Key != "" {
+		enc_key, err := secureurl.EncryptURL(liveResult.Mpd.Key)
+		if err != nil {
+			utils.Log.Panicln(err)
+			return nil, err
+		}
+		licenseUrl = "/drm?auth=" + enc_key + "&channel_id=" + channelID + "&channel=" + channel_enc_url
+	}
+
+	// Quick fix for timesplay channels.
+	if liveResult.AlgoName == "timesplay" {
+		return &DrmMpdOutput{
+			IsDRM:       liveResult.IsDRM,
+			PlayUrl:     tv_url,
+			LicenseUrl:  licenseUrl,
+			Tv_url_host: "",
+			Tv_url_path: "",
+		}, nil
+	}
+
+	parsedTvUrl, err := url.Parse(tv_url)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return nil, err
+	}
+	tv_url_split := strings.Split(parsedTvUrl.Path, "/")
+	tv_url_path, err := secureurl.EncryptURL(strings.Join(tv_url_split[:len(tv_url_split)-1], "/") + "/")
+	if err != nil {
+		utils.Log.Panicln(err)
+		return nil, err
+	}
+
+	tv_url_host, err := secureurl.EncryptURL(parsedTvUrl.Host)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return nil, err
+	}
+
+	return &DrmMpdOutput{
+		IsDRM:       liveResult.IsDRM,
+		PlayUrl:     "/render.mpd?auth=" + channel_enc_url,
+		LicenseUrl:  licenseUrl,
+		Tv_url_host: tv_url_host,
+		Tv_url_path: tv_url_path,
+	}, nil
+}
+
+// LiveMpdHandler handles live stream routes /mpd/:channelID
+func LiveMpdHandler(c *fiber.Ctx) error {
+	// Get channel ID from URL
+	channelID := c.Params("channelID")
+	quality := c.Query("q")
+	if quality == "" {
+		quality = "high"
+	}
+
+	if isCustomChannel(channelID) {
+		channel, exists := television.GetCustomChannelByID(channelID)
+		if !exists {
+			utils.Log.Printf("Custom channel with ID %s not found", channelID)
+			return internalUtils.NotFoundError(c, fmt.Sprintf("Custom channel with ID %s not found", channelID))
+		}
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/player_hls", fiber.Map{
+			"play_url": channel.URL,
+		})
+	}
+
+	// Ensure tokens are fresh before requesting MPD
+	// if err := EnsureFreshTokens(); err != nil {
+	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
+	// }
+
+	drmMpdOutput, err := getDrmMpd(channelID, quality)
+
+	// If getting DRM MPD failed, try refreshing tokens forcefully and retry once
+	if err != nil {
+		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Retrying after token refresh...", err)
+		
+		// Attempt to refresh tokens forcefully
+		refreshErr := LoginRefreshAccessToken()
+		if refreshErr != nil {
+			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+		}
+		
+		// Also refresh SSO token just in case
+		ssoRefreshErr := LoginRefreshSSOToken()
+		if ssoRefreshErr != nil {
+			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+		}
+
+		if refreshErr == nil || ssoRefreshErr == nil {
+			// Update the TV object with fresh credentials
+			freshCreds, credErr := utils.GetJIOTVCredentials()
+			if credErr == nil {
+				TV = television.New(freshCreds)
+				// Retry getDrmMpd
+				drmMpdOutput, err = getDrmMpd(channelID, quality)
+				if err == nil {
+					utils.Log.Println("Retry successful, obtained DRM MPD")
+				} else {
+					utils.Log.Printf("Retry failed: %v", err)
+				}
+			}
+		}
+	}
+	
+	// Fallback to HLS on error or empty URL
+	if err != nil {
+		utils.Log.Printf("Error getting DRM MPD (falling back to HLS): %v", err)
+	} else if drmMpdOutput == nil {
+		utils.Log.Printf("DRM MPD output is nil (falling back to HLS)")
+	} else if drmMpdOutput.PlayUrl == "" {
+		utils.Log.Printf("DRM MPD PlayUrl is empty (falling back to HLS)")
+	}
+	
+	if err != nil || drmMpdOutput == nil || drmMpdOutput.PlayUrl == "" {
+		// Use requested quality (default high) for HLS fallback to ensure best available quality first
+		play_url := utils.BuildHLSPlayURL(quality, channelID)
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/player_hls", fiber.Map{
+			"play_url": play_url,
+		})
+	}
+
+	hlsFallbackURL := utils.BuildHLSPlayURL(quality, channelID)
+	hlsPlayerFallbackURL := "/player/" + channelID + "?q=" + quality + "&af=1"
+
+	return c.Render("views/player_drm", fiber.Map{
+		"play_url":          drmMpdOutput.PlayUrl,
+		"license_url":       drmMpdOutput.LicenseUrl,
+		"channel_host":      drmMpdOutput.Tv_url_host,
+		"channel_path":      drmMpdOutput.Tv_url_path,
+		"hls_fallback_url":  hlsFallbackURL,
+		"hls_player_fallback_url": hlsPlayerFallbackURL,
+	})
+}
+
+func generateDateTime() string {
+	currentTime := time.Now()
+	formattedDateTime := fmt.Sprintf("%02d%02d%02d%02d%02d%03d",
+		currentTime.Year()%100, currentTime.Month(), currentTime.Day(),
+		currentTime.Hour(), currentTime.Minute(),
+		currentTime.Nanosecond()/1000000)
+	return formattedDateTime
+}
+
+// DRMKeyHandler handles DRM key routes /drm?auth=xxx
+func DRMKeyHandler(c *fiber.Ctx) error {
+	// Get auth token from URL
+	auth := c.Query("auth")
+	channel := c.Query("channel")
+	channel_id := c.Query("channel_id")
+
+	decoded_channel, err := internalUtils.DecryptURLParam("channel", channel)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return internalUtils.ForbiddenError(c, err)
+	}
+
+	// Make a HEAD request to the decoded_channel to get the cookies
+	client := utils.GetRequestClient()
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	req.SetRequestURI(decoded_channel)
+	req.Header.SetMethod("HEAD")
+
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	// Perform the HTTP GET request
+	if err := client.Do(req, resp); err != nil {
+		utils.Log.Panic(err)
+	}
+
+	// Get the cookies from the response
+	cookies := resp.Header.Peek("Set-Cookie")
+
+	// Set the cookies in the request
+	c.Request().Header.Set("Cookie", string(cookies))
+
+	decoded_url, err := internalUtils.DecryptURLParam("auth", auth)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return internalUtils.ForbiddenError(c, err)
+	}
+
+	// Add headers to the request
+	c.Request().Header.Set("accesstoken", TV.AccessToken)
+	c.Request().Header.Set("Connection", "keep-alive")
+	c.Request().Header.Set("os", "android")
+	c.Request().Header.Set("appName", "RJIL_JioTV")
+	c.Request().Header.Set("subscriberId", TV.Crm)
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+	c.Request().Header.Set("ssotoken", TV.SsoToken)
+	c.Request().Header.Set("x-platform", "android")
+	c.Request().Header.Set("srno", generateDateTime())
+	c.Request().Header.Set("crmid", TV.Crm)
+	c.Request().Header.Set("channelid", channel_id)
+	c.Request().Header.Set("uniqueId", TV.UniqueID)
+	c.Request().Header.Set("versionCode", headers.VersionCode389)
+	c.Request().Header.Set("usergroup", "tvYR7NSNn7rymo3F")
+	c.Request().Header.Set("devicetype", "phone")
+	c.Request().Header.Set("Accept-Encoding", "gzip, deflate")
+	c.Request().Header.Set("osVersion", "13")
+	c.Request().Header.Set("deviceId", utils.GetDeviceID())
+	c.Request().Header.Set("Content-Type", "application/octet-stream")
+
+	// Remove headers
+	c.Request().Header.Del("Accept")
+	c.Request().Header.Del("Origin")
+
+	if err := proxy.Do(c, decoded_url, TV.Client); err != nil {
+		return err
+	}
+
+	c.Response().Header.Del(fiber.HeaderServer)
+	return nil
+}
+
+// MpdHandler handles BPK proxy routes /bpk/:channelID
+func MpdHandler(c *fiber.Ctx) error {
+	proxyUrl := c.Query("auth")
+	if proxyUrl == "" {
+		c.Status(fiber.StatusBadRequest)
+		return fmt.Errorf("auth query param is required")
+	}
+
+	decryptedUrl, err := secureurl.DecryptURL(proxyUrl)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	parsedUrl, err := url.Parse(decryptedUrl)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+
+	proxyHost := parsedUrl.Host
+	pathParts := strings.Split(parsedUrl.Path, "/")
+	basePath := strings.Join(pathParts[:len(pathParts)-1], "/") + "/"
+	encProxyHost, err := secureurl.EncryptURL(proxyHost)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	encProxyPath, err := secureurl.EncryptURL(basePath)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	dashBaseURL := fmt.Sprintf("/render.dash/host/%s/path/%s", encProxyHost, encProxyPath)
+
+	// proxyQuery := parsedUrl.RawQuery
+
+	c.Request().Header.Set("Host", proxyHost)
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+
+	// Request path with query params
+	requestUrl := decryptedUrl
+
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+	// remove Accept-Encoding header
+	c.Request().Header.Del("Accept-Encoding")
+	if err := proxy.Do(c, requestUrl, TV.Client); err != nil {
+		return err
+	}
+	c.Response().Header.Del(fiber.HeaderServer)
+
+	// Delete Domain from cookies
+	if c.Response().Header.Peek("Set-Cookie") != nil {
+		cookies := c.Response().Header.Peek("Set-Cookie")
+		c.Response().Header.Del("Set-Cookie")
+
+		cookies = bytes.Replace(cookies, []byte("Domain="+proxyHost+";"), []byte(""), 1)
+		// Modify path in cookies
+		cookies = bytes.Replace(cookies, []byte("path=/"), []byte("path=/render.dash"), 1)
+
+		// Modify Set-Cookie header
+		c.Response().Header.SetBytesV("Set-Cookie", cookies)
+	}
+	resBody := c.Response().Body()
+	basePathPattern := `<BaseURL>(.*)<\/BaseURL>`
+	re := regexp.MustCompile(basePathPattern)
+	// check for match
+	if re.Match(resBody) {
+		resBody = re.ReplaceAllFunc(resBody, func(match []byte) []byte {
+			return []byte(fmt.Sprintf("<BaseURL>%s/dash/</BaseURL>", dashBaseURL))
+		})
+	} else {
+		pattern := `<Period(\s+[^>]*?)?\s*\/?>`
+		re = regexp.MustCompile(pattern)
+		resBody = re.ReplaceAllFunc(resBody, func(match []byte) []byte {
+			return []byte(fmt.Sprintf("%s\n<BaseURL>%s/</BaseURL>", match, dashBaseURL))
+		})
+	}
+
+	c.Response().SetBody(resBody)
+
+	return nil
+}
+
+// DashHandler
+func DashHandler(c *fiber.Ctx) error {
+	proxyHost := c.Query("host")
+	proxyPath := c.Query("path")
+	requestPath := string(c.Request().URI().Path())
+	requestQuery := string(c.Request().URI().QueryString())
+
+	if proxyHost == "" || proxyPath == "" {
+		const prefix = "/render.dash/host/"
+		if strings.HasPrefix(requestPath, prefix) {
+			trimmed := strings.TrimPrefix(requestPath, prefix)
+			parts := strings.SplitN(trimmed, "/path/", 2)
+			if len(parts) == 2 {
+				proxyHost = parts[0]
+				remainder := parts[1]
+				pathParts := strings.SplitN(remainder, "/", 2)
+				proxyPath = pathParts[0]
+				if len(pathParts) == 2 {
+					requestPath = "/" + pathParts[1]
+				} else {
+					requestPath = "/"
+				}
+			}
+		}
+	}
+
+	if proxyHost == "" || proxyPath == "" {
+		c.Status(fiber.StatusBadRequest)
+		return fmt.Errorf("host and path query params are required")
+	}
+
+	// decode the URL
+	proxyHost, err := secureurl.DecryptURL(proxyHost)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+	proxyPath, err = secureurl.DecryptURL(proxyPath)
+	if err != nil {
+		utils.Log.Panicln(err)
+		return err
+	}
+
+	if strings.HasPrefix(requestPath, "/render.dash") {
+		requestPath = strings.TrimPrefix(requestPath, "/render.dash")
+		if requestPath == "" {
+			requestPath = "/"
+		}
+	}
+	requestUri := requestPath
+	if requestQuery != "" {
+		requestUri = requestUri + "?" + requestQuery
+	}
+
+	proxyPath = strings.TrimSuffix(proxyPath, "/")
+	proxyUrl := fmt.Sprintf("https://%s%s%s", proxyHost, proxyPath, requestUri)
+
+	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+
+	if err := proxy.Do(c, proxyUrl, TV.Client); err != nil {
+		return err
+	}
+	c.Response().Header.Del(fiber.HeaderServer)
+
+	return nil
+}

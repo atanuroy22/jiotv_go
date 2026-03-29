@@ -1,0 +1,19 @@
+{
+    "epg": true,
+    "debug": false,
+    "disable_ts_handler": false,
+    "disable_logout": false,
+    "drm": true,
+    "title": "",
+    "disable_url_encryption": false,
+    "path_prefix": "",
+    "proxy": "",
+    "log_path": "",
+    "log_to_stdout": false,
+    "custom_channels_file": "custom_channels.json",
+    "default_categories": [],
+    "default_languages": [],
+    "custom_channels_url": "https://raw.githubusercontent.com/atanuroy22/iptv/refs/heads/main/output/custom-channels.json",
+    "epg_url": "https://avkb.short.gy/jioepg.xml.gz",
+    "plugins": ["zee5"]
+}
