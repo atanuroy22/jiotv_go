@@ -30,7 +30,7 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.0
+	github.com/andybalholm/brotli v1.2.1
 	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/gofiber/template/html/v2 v2.1.3
 	github.com/google/uuid v1.6.0
