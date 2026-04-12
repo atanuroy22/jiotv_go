@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -129,42 +130,71 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	// Ensure tokens are fresh before requesting MPD
-	// if err := EnsureFreshTokens(); err != nil {
-	// 	utils.Log.Printf("Failed to ensure fresh tokens: %v", err)
-	// }
+	// Ensure tokens are fresh before requesting MPD by proactively refreshing
+	if os.Getenv("JIOTV_DEBUG") == "true" {
+		utils.Log.Println("[DEBUG] LiveMpdHandler: Proactively refreshing tokens before getDrmMpd")
+	}
+	
+	// Proactive refresh attempt - don't wait for error
+	_ = LoginRefreshAccessToken()
+	_ = LoginRefreshSSOToken()
+	
+	// Update TV object with latest credentials
+	if freshCreds, err := utils.GetJIOTVCredentials(); err == nil {
+		TV = television.New(freshCreds)
+	}
 
 	drmMpdOutput, err := getDrmMpd(channelID, quality)
 
-	// If getting DRM MPD failed, try refreshing tokens forcefully and retry once
+	// If getting DRM MPD failed, try refreshing tokens forcefully and retry with multiple attempts
 	if err != nil {
-		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Retrying after token refresh...", err)
+		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Attempting recovery...", err)
 		
-		// Attempt to refresh tokens forcefully
+		// Attempt 1: Basic token refresh
 		refreshErr := LoginRefreshAccessToken()
 		if refreshErr != nil {
-			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
+			utils.Log.Printf("Attempt 1 - Failed to refresh AccessToken: %v", refreshErr)
 		}
 		
-		// Also refresh SSO token just in case
+		// Attempt 2: SSO token refresh
 		ssoRefreshErr := LoginRefreshSSOToken()
 		if ssoRefreshErr != nil {
-			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
+			utils.Log.Printf("Attempt 2 - Failed to refresh SSOToken: %v", ssoRefreshErr)
 		}
 
-		if refreshErr == nil || ssoRefreshErr == nil {
-			// Update the TV object with fresh credentials
+		// Attempt 3: Full credential reload
+		if refreshErr != nil || ssoRefreshErr != nil {
+			utils.Log.Printf("Attempt 3 - Reloading credentials from disk...")
+			if freshCreds, credErr := utils.GetJIOTVCredentials(); credErr == nil {
+				TV = television.New(freshCreds)
+				
+				// Retry getDrmMpd with fresh credentials
+				if drmMpdOutput, err = getDrmMpd(channelID, quality); err == nil {
+					utils.Log.Println("Recovery successful after credential reload")
+					return nil // Early return - success
+				}
+			} else {
+				utils.Log.Printf("Failed to load credentials from disk: %v", credErr)
+			}
+		} else if refreshErr == nil || ssoRefreshErr == nil {
+			// Tokens refreshed successfully, reload TV object
 			freshCreds, credErr := utils.GetJIOTVCredentials()
 			if credErr == nil {
 				TV = television.New(freshCreds)
 				// Retry getDrmMpd
 				drmMpdOutput, err = getDrmMpd(channelID, quality)
 				if err == nil {
-					utils.Log.Println("Retry successful, obtained DRM MPD")
-				} else {
-					utils.Log.Printf("Retry failed: %v", err)
+					utils.Log.Println("Retry successful after token refresh")
+					return nil // Early return - success
 				}
 			}
+		}
+		
+		// If we still have error, log the string for debugging
+		errStr := fmt.Sprintf("%v", err)
+		if strings.Contains(errStr, "refresh token not found") {
+			utils.Log.Printf("ERROR: Session refresh token is lost or expired. User needs to re-login.")
+			utils.Log.Printf("This can happen when: 1) Jio session expired  2) Logged out from another device  3) Token cache cleared")
 		}
 	}
 	
@@ -314,7 +344,21 @@ func MpdHandler(c *fiber.Ctx) error {
 		utils.Log.Panicln(err)
 		return err
 	}
+	
+	// Extract channel_id and cached HDNEA if available from query params
+	// This allows DashHandler to use the same auth context
+	var cachedHDNEA string
+	if chd := c.Query("hdnea"); chd != "" {
+		cachedHDNEA = chd
+	}
+	
 	dashBaseURL := fmt.Sprintf("/render.dash/host/%s/path/%s", encProxyHost, encProxyPath)
+	if cachedHDNEA != "" {
+		encHDNEA, encErr := secureurl.EncryptURL("__hdnea__=" + cachedHDNEA)
+		if encErr == nil {
+			dashBaseURL = fmt.Sprintf("/render.dash/host/%s/path/%s/hdnea/%s", encProxyHost, encProxyPath, encHDNEA)
+		}
+	}
 
 	// proxyQuery := parsedUrl.RawQuery
 
@@ -327,10 +371,77 @@ func MpdHandler(c *fiber.Ctx) error {
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 	// remove Accept-Encoding header
 	c.Request().Header.Del("Accept-Encoding")
+	
+	// AGGRESSIVE REFRESH: Make initial proxy request
 	if err := proxy.Do(c, requestUrl, TV.Client); err != nil {
 		return err
 	}
+	
+	// Handle 403/401 auth failures by stripping HDNEA and retrying
+	statusCode := c.Response().StatusCode()
+	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] MpdHandler got %d response - stripping HDNEA and retrying", statusCode)
+		}
+		
+		// Reset response to allow retry
+		c.Response().Reset()
+		
+		// Strip HDNEA token and retry - CDN will provide fresh auth
+		// HDNEA tokens are CDN-managed and expire, so requesting without them 
+		// forces CDN to issue fresh auth
+		strippedUrl := stripHDNEAFromURL(decryptedUrl)
+		
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			if strippedUrl != requestUrl {
+				utils.Log.Printf("[DEBUG] MpdHandler: removed HDNEA from URL, retrying")
+			} else {
+				utils.Log.Printf("[DEBUG] MpdHandler: retrying request (no HDNEA to strip)")
+			}
+		}
+		
+		if err := proxy.Do(c, strippedUrl, TV.Client); err != nil {
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] MpdHandler retry failed: %v", err)
+			}
+			return err
+		}
+		
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] MpdHandler retry - new status: %d", c.Response().StatusCode())
+		}
+	}
+	
 	c.Response().Header.Del(fiber.HeaderServer)
+	
+	// Extract __hdnea__ from upstream response for injecting into dashBaseURL
+	upstreamHDNEA := ""
+	
+	// Try to extract from Set-Cookie header first
+	setCookie := c.Response().Header.Peek("Set-Cookie")
+	if setCookie != nil {
+		setCookieStr := string(setCookie)
+		// Parse Set-Cookie: name=value; attributes...
+		// Look for __hdnea__=value
+		if strings.Contains(setCookieStr, "__hdnea__=") {
+			parts := strings.Split(setCookieStr, ";")
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if strings.HasPrefix(trimmed, "__hdnea__=") {
+					upstreamHDNEA = strings.TrimPrefix(trimmed, "__hdnea__=")
+					break
+				}
+			}
+		}
+	}
+	
+	// If we got a fresh __hdnea__ from upstream, update dashBaseURL with it
+	if upstreamHDNEA != "" {
+		encHDNEA, encErr := secureurl.EncryptURL("__hdnea__=" + upstreamHDNEA)
+		if encErr == nil {
+			dashBaseURL = fmt.Sprintf("/render.dash/host/%s/path/%s/hdnea/%s", encProxyHost, encProxyPath, encHDNEA)
+		}
+	}
 
 	// Delete Domain from cookies
 	if c.Response().Header.Peek("Set-Cookie") != nil {
@@ -371,6 +482,9 @@ func DashHandler(c *fiber.Ctx) error {
 	proxyPath := c.Query("path")
 	requestPath := string(c.Request().URI().Path())
 	requestQuery := string(c.Request().URI().QueryString())
+	
+	// Extract embedded HDNEA if present 
+	var hdneaToken string
 
 	if proxyHost == "" || proxyPath == "" {
 		const prefix = "/render.dash/host/"
@@ -380,12 +494,36 @@ func DashHandler(c *fiber.Ctx) error {
 			if len(parts) == 2 {
 				proxyHost = parts[0]
 				remainder := parts[1]
-				pathParts := strings.SplitN(remainder, "/", 2)
-				proxyPath = pathParts[0]
-				if len(pathParts) == 2 {
-					requestPath = "/" + pathParts[1]
+				
+				// Check for embedded hdnea pattern: /render.dash/host/{host}/path/{path}/hdnea/{hdnea}/{rest}
+				hdneaParts := strings.SplitN(remainder, "/hdnea/", 2)
+				if len(hdneaParts) == 2 {
+					proxyPath = hdneaParts[0]
+					// Now hdneaParts[1] contains "{encHdnea}/{rest...}"
+					restParts := strings.SplitN(hdneaParts[1], "/", 2)
+					encHdnea := restParts[0]
+					
+					// Decrypt HDNEA
+					decHdnea, decErr := secureurl.DecryptURL(encHdnea)
+					if decErr == nil && strings.HasPrefix(decHdnea, "__hdnea__=") {
+						hdneaToken = strings.TrimPrefix(decHdnea, "__hdnea__=")
+					}
+					
+					// Set request path to the remaining part after hdnea
+					if len(restParts) == 2 {
+						requestPath = "/" + restParts[1]
+					} else {
+						requestPath = "/"
+					}
 				} else {
-					requestPath = "/"
+					// No hdnea, parse normally
+					pathParts := strings.SplitN(remainder, "/", 2)
+					proxyPath = pathParts[0]
+					if len(pathParts) == 2 {
+						requestPath = "/" + pathParts[1]
+					} else {
+						requestPath = "/"
+					}
 				}
 			}
 		}
@@ -423,10 +561,47 @@ func DashHandler(c *fiber.Ctx) error {
 	proxyUrl := fmt.Sprintf("https://%s%s%s", proxyHost, proxyPath, requestUri)
 
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+	
+	// Set HDNEA cookie if we have it
+	if hdneaToken != "" {
+		c.Request().Header.SetCookie("__hdnea__", hdneaToken)
+	}
 
+	// AGGRESSIVE REFRESH: Make initial proxy request
 	if err := proxy.Do(c, proxyUrl, TV.Client); err != nil {
 		return err
 	}
+	
+	// Handle 403/401 auth failures with retry mechanism (AGGRESSIVE REFRESH)
+	statusCode := c.Response().StatusCode()
+	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] DashHandler got %d response - clearing HDNEA cookie and retrying", statusCode)
+		}
+		
+		// Reset response to allow retry
+		c.Response().Reset()
+		
+		// Clear HDNEA cookie - expired token causes 403
+		// CDN will provide fresh HDNEA in the response
+		c.Request().Header.DelCookie("__hdnea__")
+		
+		if err := proxy.Do(c, proxyUrl, TV.Client); err != nil {
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] DashHandler retry failed: %v", err)
+			}
+			return err
+		}
+		
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] DashHandler retry - new status: %d", c.Response().StatusCode())
+		}
+		
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] DashHandler retry successful - new status: %d", c.Response().StatusCode())
+		}
+	}
+	
 	c.Response().Header.Del(fiber.HeaderServer)
 
 	return nil
