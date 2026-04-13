@@ -816,9 +816,9 @@ func RenderHandler(c *fiber.Ctx) error {
 		case bytes.HasSuffix(match, []byte(".m3u8")):
 			return television.ReplaceM3U8(baseUrl, match, params, channel_id, c.Query("q"))
 		case bytes.HasSuffix(match, []byte(".ts")):
-			return television.ReplaceTS(baseUrl, match, params)
+			return television.ReplaceTS(baseUrl, match, params, channel_id)
 		case bytes.HasSuffix(match, []byte(".aac")):
-			return television.ReplaceAAC(baseUrl, match, params)
+			return television.ReplaceAAC(baseUrl, match, params, channel_id)
 		default:
 			return match
 		}
@@ -971,6 +971,8 @@ func RenderTSHandler(c *fiber.Ctx) error {
 	// Ensure tokens are fresh before proxying TS segments
 	EnsureFreshCredentials()
 
+	channelID := c.Query("channel_key_id")
+	quality := c.Query("q")
 	auth := c.Query("auth")
 	// parse incoming hdnea query and set as request cookie only for upstream call (no client cookie)
 	if hdnea := c.Query("hdnea"); hdnea != "" {
@@ -1014,8 +1016,19 @@ func RenderTSHandler(c *fiber.Ctx) error {
 
 		c.Response().Reset()
 		c.Request().Header.DelCookie("__hdnea__")
-		retryUrl := stripHDNEAFromURL(decoded_url)
 		ForceRefreshCredentials()
+
+		retryUrl := stripHDNEAFromURL(decoded_url)
+		if channelID != "" {
+			if refreshedResult, refreshErr := TV.Live(channelID); refreshErr == nil && refreshedResult != nil {
+				if refreshedURL := selectBestLiveHLSURL(refreshedResult, quality); refreshedURL != "" {
+					retryUrl = toAbsoluteStreamURL(refreshedURL, refreshedResult)
+					if refreshedHDNEA := extractLiveResultHDNEA(refreshedResult); refreshedHDNEA != "" {
+						setCachedHDNEA(channelID, refreshedHDNEA)
+					}
+				}
+			}
+		}
 
 		if err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
 			return err
