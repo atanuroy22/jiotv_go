@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -19,6 +20,96 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+var (
+	// tokenRefreshLock prevents concurrent TV object modifications from race conditions
+	tokenRefreshLock sync.Mutex
+	// lastTokenRefreshTime tracks when we last successfully refreshed
+	lastTokenRefreshTime = time.Now()
+)
+
+// EnsureFreshCredentials refreshes tokens proactively before they expire
+// This function prevents 403 errors by keeping credentials always fresh
+// Returns true if tokens are fresh (either just refreshed or cached)
+func EnsureFreshCredentials() bool {
+	tokenRefreshLock.Lock()
+	defer tokenRefreshLock.Unlock()
+
+	// Only refresh if at least 30 seconds have passed since last successful refresh
+	// This prevents excessive API calls while staying within token TTL (90-120s)
+	timeSinceLastRefresh := time.Since(lastTokenRefreshTime)
+	if timeSinceLastRefresh < 30*time.Second {
+		return true // Recently refreshed, tokens are fresh
+	}
+
+	return performTokenRefresh()
+}
+
+// ForceRefreshCredentials bypasses the 30-second interval check and forces immediate refresh
+// Use this only in error recovery paths when we know tokens have failed
+func ForceRefreshCredentials() bool {
+	tokenRefreshLock.Lock()
+	defer tokenRefreshLock.Unlock()
+
+	if os.Getenv("JIOTV_DEBUG") == "true" {
+		utils.Log.Printf("[DEBUG] FORCED token refresh (bypassing 30-second interval)")
+	}
+
+	return performTokenRefresh()
+}
+
+// performTokenRefresh does the actual token refresh work (must be called with lock held)
+func performTokenRefresh() bool {
+	// CRITICAL REFRESH #1: Refresh AccessToken
+	// LoginRefreshAccessToken() does:
+	//   1. Call refresh API
+	//   2. Update credentials file
+	//   3. Update TV object with new token
+	accessTokenErr := LoginRefreshAccessToken()
+	if accessTokenErr != nil {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] AccessToken refresh error: %v", accessTokenErr)
+		}
+		// Don't return false yet - try SSO token refresh
+	} else {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] AccessToken refreshed successfully")
+		}
+	}
+
+	// CRITICAL REFRESH #2: Refresh SSOToken
+	// LoginRefreshSSOToken() does:
+	//   1. Call refresh API
+	//   2. Update credentials file
+	//   3. Update TV object with new token
+	ssoTokenErr := LoginRefreshSSOToken()
+	if ssoTokenErr != nil {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] SSOToken refresh error: %v", ssoTokenErr)
+		}
+		// Don't return false yet - check if at least one refresh succeeded
+	} else {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] SSOToken refreshed successfully")
+		}
+	}
+
+	// Update last refresh time if either refresh succeeded
+	if accessTokenErr == nil || ssoTokenErr == nil {
+		lastTokenRefreshTime = time.Now()
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] Token refresh cycle completed. TV object already updated by refresh functions")
+		}
+		return true
+	}
+
+	// Both refreshes failed - log comprehensive error
+	if os.Getenv("JIOTV_DEBUG") == "true" {
+		utils.Log.Printf("[DEBUG] CRITICAL: Both token refreshes failed! AccessToken error: %v, SSOToken error: %v",
+			accessTokenErr, ssoTokenErr)
+	}
+	return false
+}
+
 // getDrmMpd returns required properties for rendering DRM MPD
 func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 	// Get live stream URL from JioTV API
@@ -26,9 +117,12 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 	if err != nil {
 		return nil, err
 	}
+	if refreshedResult, refreshErr := refreshLiveResultIfNeeded(channelID, liveResult); refreshErr == nil && refreshedResult != nil {
+		liveResult = refreshedResult
+	}
 
 	tv_url := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
-	
+
 	// If quality selection fails (empty), try to fallback to any available quality
 	if tv_url == "" {
 		if liveResult.Mpd.Bitrates.High != "" {
@@ -102,7 +196,7 @@ func getDrmMpd(channelID, quality string) (*DrmMpdOutput, error) {
 
 	return &DrmMpdOutput{
 		IsDRM:       liveResult.IsDRM,
-		PlayUrl:     "/render.mpd?auth=" + channel_enc_url,
+		PlayUrl:     "/render.mpd?auth=" + channel_enc_url + "&channel_id=" + channelID + "&q=" + quality,
 		LicenseUrl:  licenseUrl,
 		Tv_url_host: tv_url_host,
 		Tv_url_path: tv_url_path,
@@ -114,8 +208,12 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	// Get channel ID from URL
 	channelID := c.Params("channelID")
 	quality := c.Query("q")
+	playerMode := c.Query("pm") // "hd" (force Shaka) or "auto" (try Shaka, fallback HLS)
 	if quality == "" {
 		quality = "high"
+	}
+	if playerMode == "" {
+		playerMode = "hd" // Default to HD mode
 	}
 
 	if isCustomChannel(channelID) {
@@ -130,66 +228,25 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	// Ensure tokens are fresh before requesting MPD by proactively refreshing
-	if os.Getenv("JIOTV_DEBUG") == "true" {
-		utils.Log.Println("[DEBUG] LiveMpdHandler: Proactively refreshing tokens before getDrmMpd")
-	}
-	
-	// Proactive refresh attempt - don't wait for error
-	_ = LoginRefreshAccessToken()
-	_ = LoginRefreshSSOToken()
-	
-	// Update TV object with latest credentials
-	if freshCreds, err := utils.GetJIOTVCredentials(); err == nil {
-		TV = television.New(freshCreds)
-	}
+	// Ensure tokens are fresh before requesting MPD
+	EnsureFreshCredentials()
 
 	drmMpdOutput, err := getDrmMpd(channelID, quality)
 
 	// If getting DRM MPD failed, try refreshing tokens forcefully and retry with multiple attempts
 	if err != nil {
-		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Attempting recovery...", err)
-		
-		// Attempt 1: Basic token refresh
-		refreshErr := LoginRefreshAccessToken()
-		if refreshErr != nil {
-			utils.Log.Printf("Attempt 1 - Failed to refresh AccessToken: %v", refreshErr)
-		}
-		
-		// Attempt 2: SSO token refresh
-		ssoRefreshErr := LoginRefreshSSOToken()
-		if ssoRefreshErr != nil {
-			utils.Log.Printf("Attempt 2 - Failed to refresh SSOToken: %v", ssoRefreshErr)
+		utils.Log.Printf("First attempt to get DRM MPD failed: %v. Attempting recovery with forced credentials refresh...", err)
+
+		// Force refresh credentials (bypasses 30-second interval for error recovery)
+		if ForceRefreshCredentials() {
+			// Retry getDrmMpd with fresh tokens
+			drmMpdOutput, err = getDrmMpd(channelID, quality)
+			if err == nil {
+				utils.Log.Println("Retry successful after forced token refresh")
+				return nil // Early return - success
+			}
 		}
 
-		// Attempt 3: Full credential reload
-		if refreshErr != nil || ssoRefreshErr != nil {
-			utils.Log.Printf("Attempt 3 - Reloading credentials from disk...")
-			if freshCreds, credErr := utils.GetJIOTVCredentials(); credErr == nil {
-				TV = television.New(freshCreds)
-				
-				// Retry getDrmMpd with fresh credentials
-				if drmMpdOutput, err = getDrmMpd(channelID, quality); err == nil {
-					utils.Log.Println("Recovery successful after credential reload")
-					return nil // Early return - success
-				}
-			} else {
-				utils.Log.Printf("Failed to load credentials from disk: %v", credErr)
-			}
-		} else if refreshErr == nil || ssoRefreshErr == nil {
-			// Tokens refreshed successfully, reload TV object
-			freshCreds, credErr := utils.GetJIOTVCredentials()
-			if credErr == nil {
-				TV = television.New(freshCreds)
-				// Retry getDrmMpd
-				drmMpdOutput, err = getDrmMpd(channelID, quality)
-				if err == nil {
-					utils.Log.Println("Retry successful after token refresh")
-					return nil // Early return - success
-				}
-			}
-		}
-		
 		// If we still have error, log the string for debugging
 		errStr := fmt.Sprintf("%v", err)
 		if strings.Contains(errStr, "refresh token not found") {
@@ -197,7 +254,7 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 			utils.Log.Printf("This can happen when: 1) Jio session expired  2) Logged out from another device  3) Token cache cleared")
 		}
 	}
-	
+
 	// Fallback to HLS on error or empty URL
 	if err != nil {
 		utils.Log.Printf("Error getting DRM MPD (falling back to HLS): %v", err)
@@ -206,7 +263,7 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	} else if drmMpdOutput.PlayUrl == "" {
 		utils.Log.Printf("DRM MPD PlayUrl is empty (falling back to HLS)")
 	}
-	
+
 	if err != nil || drmMpdOutput == nil || drmMpdOutput.PlayUrl == "" {
 		// Use requested quality (default high) for HLS fallback to ensure best available quality first
 		play_url := utils.BuildHLSPlayURL(quality, channelID)
@@ -220,12 +277,13 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	hlsPlayerFallbackURL := "/player/" + channelID + "?q=" + quality + "&af=1"
 
 	return c.Render("views/player_drm", fiber.Map{
-		"play_url":          drmMpdOutput.PlayUrl,
-		"license_url":       drmMpdOutput.LicenseUrl,
-		"channel_host":      drmMpdOutput.Tv_url_host,
-		"channel_path":      drmMpdOutput.Tv_url_path,
-		"hls_fallback_url":  hlsFallbackURL,
+		"play_url":                drmMpdOutput.PlayUrl,
+		"license_url":             drmMpdOutput.LicenseUrl,
+		"channel_host":            drmMpdOutput.Tv_url_host,
+		"channel_path":            drmMpdOutput.Tv_url_path,
+		"hls_fallback_url":        hlsFallbackURL,
 		"hls_player_fallback_url": hlsPlayerFallbackURL,
+		"player_mode":             playerMode, // Pass mode to template
 	})
 }
 
@@ -314,6 +372,11 @@ func DRMKeyHandler(c *fiber.Ctx) error {
 
 // MpdHandler handles BPK proxy routes /bpk/:channelID
 func MpdHandler(c *fiber.Ctx) error {
+	// CRITICAL: Refresh credentials before proxying MPD
+	EnsureFreshCredentials()
+
+	channelID := c.Query("channel_id")
+	quality := c.Query("q")
 	proxyUrl := c.Query("auth")
 	if proxyUrl == "" {
 		c.Status(fiber.StatusBadRequest)
@@ -331,6 +394,19 @@ func MpdHandler(c *fiber.Ctx) error {
 		return err
 	}
 
+	if channelID != "" {
+		if liveResult, liveErr := TV.Live(channelID); liveErr == nil && liveResult != nil {
+			if freshUrl := selectBestLiveMPDURL(liveResult, quality); freshUrl != "" {
+				decryptedUrl = freshUrl
+				parsedUrl, err = url.Parse(decryptedUrl)
+				if err != nil {
+					utils.Log.Panicln(err)
+					return err
+				}
+			}
+		}
+	}
+
 	proxyHost := parsedUrl.Host
 	pathParts := strings.Split(parsedUrl.Path, "/")
 	basePath := strings.Join(pathParts[:len(pathParts)-1], "/") + "/"
@@ -344,14 +420,14 @@ func MpdHandler(c *fiber.Ctx) error {
 		utils.Log.Panicln(err)
 		return err
 	}
-	
+
 	// Extract channel_id and cached HDNEA if available from query params
 	// This allows DashHandler to use the same auth context
 	var cachedHDNEA string
 	if chd := c.Query("hdnea"); chd != "" {
 		cachedHDNEA = chd
 	}
-	
+
 	dashBaseURL := fmt.Sprintf("/render.dash/host/%s/path/%s", encProxyHost, encProxyPath)
 	if cachedHDNEA != "" {
 		encHDNEA, encErr := secureurl.EncryptURL("__hdnea__=" + cachedHDNEA)
@@ -371,27 +447,28 @@ func MpdHandler(c *fiber.Ctx) error {
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 	// remove Accept-Encoding header
 	c.Request().Header.Del("Accept-Encoding")
-	
+
 	// AGGRESSIVE REFRESH: Make initial proxy request
 	if err := proxy.Do(c, requestUrl, TV.Client); err != nil {
 		return err
 	}
-	
+
 	// Handle 403/401 auth failures by stripping HDNEA and retrying
 	statusCode := c.Response().StatusCode()
 	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] MpdHandler got %d response - stripping HDNEA and retrying", statusCode)
 		}
-		
+
 		// Reset response to allow retry
 		c.Response().Reset()
-		
+		ForceRefreshCredentials()
+
 		// Strip HDNEA token and retry - CDN will provide fresh auth
-		// HDNEA tokens are CDN-managed and expire, so requesting without them 
+		// HDNEA tokens are CDN-managed and expire, so requesting without them
 		// forces CDN to issue fresh auth
 		strippedUrl := stripHDNEAFromURL(decryptedUrl)
-		
+
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			if strippedUrl != requestUrl {
 				utils.Log.Printf("[DEBUG] MpdHandler: removed HDNEA from URL, retrying")
@@ -399,24 +476,24 @@ func MpdHandler(c *fiber.Ctx) error {
 				utils.Log.Printf("[DEBUG] MpdHandler: retrying request (no HDNEA to strip)")
 			}
 		}
-		
+
 		if err := proxy.Do(c, strippedUrl, TV.Client); err != nil {
 			if os.Getenv("JIOTV_DEBUG") == "true" {
 				utils.Log.Printf("[DEBUG] MpdHandler retry failed: %v", err)
 			}
 			return err
 		}
-		
+
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] MpdHandler retry - new status: %d", c.Response().StatusCode())
 		}
 	}
-	
+
 	c.Response().Header.Del(fiber.HeaderServer)
-	
+
 	// Extract __hdnea__ from upstream response for injecting into dashBaseURL
 	upstreamHDNEA := ""
-	
+
 	// Try to extract from Set-Cookie header first
 	setCookie := c.Response().Header.Peek("Set-Cookie")
 	if setCookie != nil {
@@ -434,7 +511,7 @@ func MpdHandler(c *fiber.Ctx) error {
 			}
 		}
 	}
-	
+
 	// If we got a fresh __hdnea__ from upstream, update dashBaseURL with it
 	if upstreamHDNEA != "" {
 		encHDNEA, encErr := secureurl.EncryptURL("__hdnea__=" + upstreamHDNEA)
@@ -482,8 +559,8 @@ func DashHandler(c *fiber.Ctx) error {
 	proxyPath := c.Query("path")
 	requestPath := string(c.Request().URI().Path())
 	requestQuery := string(c.Request().URI().QueryString())
-	
-	// Extract embedded HDNEA if present 
+
+	// Extract embedded HDNEA if present
 	var hdneaToken string
 
 	if proxyHost == "" || proxyPath == "" {
@@ -494,7 +571,7 @@ func DashHandler(c *fiber.Ctx) error {
 			if len(parts) == 2 {
 				proxyHost = parts[0]
 				remainder := parts[1]
-				
+
 				// Check for embedded hdnea pattern: /render.dash/host/{host}/path/{path}/hdnea/{hdnea}/{rest}
 				hdneaParts := strings.SplitN(remainder, "/hdnea/", 2)
 				if len(hdneaParts) == 2 {
@@ -502,13 +579,13 @@ func DashHandler(c *fiber.Ctx) error {
 					// Now hdneaParts[1] contains "{encHdnea}/{rest...}"
 					restParts := strings.SplitN(hdneaParts[1], "/", 2)
 					encHdnea := restParts[0]
-					
+
 					// Decrypt HDNEA
 					decHdnea, decErr := secureurl.DecryptURL(encHdnea)
 					if decErr == nil && strings.HasPrefix(decHdnea, "__hdnea__=") {
 						hdneaToken = strings.TrimPrefix(decHdnea, "__hdnea__=")
 					}
-					
+
 					// Set request path to the remaining part after hdnea
 					if len(restParts) == 2 {
 						requestPath = "/" + restParts[1]
@@ -561,47 +638,51 @@ func DashHandler(c *fiber.Ctx) error {
 	proxyUrl := fmt.Sprintf("https://%s%s%s", proxyHost, proxyPath, requestUri)
 
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
-	
+
 	// Set HDNEA cookie if we have it
 	if hdneaToken != "" {
 		c.Request().Header.SetCookie("__hdnea__", hdneaToken)
 	}
 
+	// CRITICAL: Refresh credentials before proxying segments
+	EnsureFreshCredentials()
+
 	// AGGRESSIVE REFRESH: Make initial proxy request
 	if err := proxy.Do(c, proxyUrl, TV.Client); err != nil {
 		return err
 	}
-	
+
 	// Handle 403/401 auth failures with retry mechanism (AGGRESSIVE REFRESH)
 	statusCode := c.Response().StatusCode()
 	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] DashHandler got %d response - clearing HDNEA cookie and retrying", statusCode)
 		}
-		
+
 		// Reset response to allow retry
 		c.Response().Reset()
-		
+		ForceRefreshCredentials()
+
 		// Clear HDNEA cookie - expired token causes 403
 		// CDN will provide fresh HDNEA in the response
 		c.Request().Header.DelCookie("__hdnea__")
-		
+
 		if err := proxy.Do(c, proxyUrl, TV.Client); err != nil {
 			if os.Getenv("JIOTV_DEBUG") == "true" {
 				utils.Log.Printf("[DEBUG] DashHandler retry failed: %v", err)
 			}
 			return err
 		}
-		
+
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] DashHandler retry - new status: %d", c.Response().StatusCode())
 		}
-		
+
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] DashHandler retry successful - new status: %d", c.Response().StatusCode())
 		}
 	}
-	
+
 	c.Response().Header.Del(fiber.HeaderServer)
 
 	return nil
