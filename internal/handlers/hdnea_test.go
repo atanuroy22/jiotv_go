@@ -9,7 +9,7 @@ import (
 )
 
 func TestHDNEARemainingLifetime(t *testing.T) {
-	futureToken := fmt.Sprintf("hdntl=exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(5*time.Minute).Unix())
+	futureToken := fmt.Sprintf("exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(5*time.Minute).Unix())
 	remaining, ok := hdneaRemainingLifetime(futureToken)
 	if !ok {
 		t.Fatalf("expected token expiry to be parsed")
@@ -18,7 +18,7 @@ func TestHDNEARemainingLifetime(t *testing.T) {
 		t.Fatalf("expected token to have more than 4 minutes remaining, got %s", remaining)
 	}
 
-	soonToken := fmt.Sprintf("hdntl=exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(10*time.Second).Unix())
+	soonToken := fmt.Sprintf("exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(10*time.Second).Unix())
 	remaining, ok = hdneaRemainingLifetime(soonToken)
 	if !ok {
 		t.Fatalf("expected near-expiry token to be parsed")
@@ -30,13 +30,13 @@ func TestHDNEARemainingLifetime(t *testing.T) {
 
 func TestLiveResultNeedsRefresh(t *testing.T) {
 	liveResult := &television.LiveURLOutput{
-		Hdnea: fmt.Sprintf("hdntl=exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(10*time.Second).Unix()),
+		Hdnea: fmt.Sprintf("exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(10*time.Second).Unix()),
 	}
 	if !liveResultNeedsRefresh(liveResult) {
 		t.Fatalf("expected live result to need refresh")
 	}
 
-	liveResult.Hdnea = fmt.Sprintf("hdntl=exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(5*time.Minute).Unix())
+	liveResult.Hdnea = fmt.Sprintf("exp=%d~acl=/*~data=hdntl~hmac=test", time.Now().Add(5*time.Minute).Unix())
 	if liveResultNeedsRefresh(liveResult) {
 		t.Fatalf("expected live result to be considered fresh")
 	}

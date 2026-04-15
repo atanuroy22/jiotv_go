@@ -178,3 +178,36 @@ func TestDashHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestStripHDNEAFromURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		want     string
+	}{
+		{
+			name:  "removes hdnea query parameter",
+			input: "https://example.com/video.mpd?foo=bar&hdnea=abc123&baz=qux",
+			want:  "https://example.com/video.mpd?baz=qux&foo=bar",
+		},
+		{
+			name:  "removes __hdnea__ query parameter",
+			input: "https://example.com/video.mpd?foo=bar&__hdnea__=abc123",
+			want:  "https://example.com/video.mpd?foo=bar",
+		},
+		{
+			name:  "returns original url without hdnea",
+			input: "https://example.com/video.mpd?foo=bar",
+			want:  "https://example.com/video.mpd?foo=bar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripHDNEAFromURL(tt.input)
+			if got != tt.want {
+				t.Fatalf("stripHDNEAFromURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
