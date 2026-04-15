@@ -347,10 +347,10 @@ func extractHDNEAFromURL(streamURL string) string {
 		return ""
 	}
 	query := parsed.Query()
-	if token := query.Get("hdnea"); token != "" {
+	if token := query.Get("__hdnea__"); token != "" {
 		return token
 	}
-	if token := query.Get("__hdnea__"); token != "" {
+	if token := query.Get("hdnea"); token != "" {
 		return token
 	}
 	return ""
@@ -772,13 +772,58 @@ func RenderHandler(c *fiber.Ctx) error {
 			utils.Log.Printf("[DEBUG] RenderHandler retry completed - new status: %d", statusCode)
 		}
 	} else if statusCode == fiber.StatusNotFound {
+		wasNotFound := true
 		strippedURL := stripHDNEAFromURL(decoded_url)
 		if strippedURL != renderURL {
 			renderURL = strippedURL
-			renderResult, statusCode, newHdnea = TV.Render(renderURL, "")
+			renderResult, statusCode, newHdnea = TV.Render(renderURL, cachedHDNEA)
 			if newHdnea != "" {
 				setCachedHDNEA(channel_id, newHdnea)
 				cachedHDNEA = newHdnea
+			}
+		}
+
+		// Some channels occasionally return stale HLS manifests (404).
+		// Do a bounded retry with a freshly fetched live URL.
+		// If the requested quality variant is broken, try alternative qualities once.
+		if wasNotFound && channel_id != "" {
+			retryQuality := c.Query("q")
+			if retryQuality == "" {
+				retryQuality = "auto"
+			}
+
+			if refreshedLiveResult, refreshErr := TV.Live(channel_id); refreshErr == nil && refreshedLiveResult != nil {
+				if freshToken := extractLiveResultHDNEA(refreshedLiveResult); freshToken != "" {
+					setCachedHDNEA(channel_id, freshToken)
+					cachedHDNEA = freshToken
+				}
+
+				qualityCandidates := []string{retryQuality, "auto", "high", "medium", "low"}
+				triedURL := map[string]bool{renderURL: true}
+
+				for _, candidateQuality := range qualityCandidates {
+					candidateURL := selectBestLiveHLSURL(refreshedLiveResult, candidateQuality)
+					candidateURL = toAbsoluteStreamURL(candidateURL, refreshedLiveResult)
+					if candidateURL == "" || triedURL[candidateURL] {
+						continue
+					}
+					triedURL[candidateURL] = true
+
+					if os.Getenv("JIOTV_DEBUG") == "true" {
+						utils.Log.Printf("[DEBUG] RenderHandler 404 recovery - trying quality=%s for channel=%s", candidateQuality, channel_id)
+					}
+
+					renderURL = candidateURL
+					renderResult, statusCode, newHdnea = TV.Render(renderURL, cachedHDNEA)
+					if newHdnea != "" {
+						setCachedHDNEA(channel_id, newHdnea)
+						cachedHDNEA = newHdnea
+					}
+
+					if statusCode == fiber.StatusOK {
+						break
+					}
+				}
 			}
 		}
 	}
@@ -800,13 +845,19 @@ func RenderHandler(c *fiber.Ctx) error {
 		if parsedParams, parseErr := url.ParseQuery(params); parseErr == nil {
 			parsedParams.Del("hdnea")
 			parsedParams.Del("__hdnea__")
+			encodedParams := parsedParams.Encode()
 			if cachedHDNEA != "" {
-				parsedParams.Set("__hdnea__", cachedHDNEA)
+				if encodedParams != "" {
+					params = encodedParams + "&__hdnea__=" + cachedHDNEA
+				} else {
+					params = "__hdnea__=" + cachedHDNEA
+				}
+			} else {
+				params = encodedParams
 			}
-			params = parsedParams.Encode()
 		}
 	} else if cachedHDNEA != "" {
-		params = url.Values{"__hdnea__": []string{cachedHDNEA}}.Encode()
+		params = "__hdnea__=" + cachedHDNEA
 	}
 
 	// replacer replaces all the file names ending with .m3u8 and .ts with our own server URLs
@@ -1164,11 +1215,12 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	var player_url string
-	// Default to MPD (DRM/High Quality) player if not a custom channel
-	if isCustomChannel(id) {
-		player_url = "/player/" + id + "?q=" + quality
-	} else {
+	if EnableDRM {
+		// Sony channels should always use DRM player for consistency
+		// This avoids routing issues and 403 errors from mixed player usage
 		player_url = "/mpd/" + id + "?q=" + quality
+	} else {
+		player_url = "/player/" + id + "?q=" + quality
 	}
 
 	internalUtils.SetCacheHeader(c, 3600)
