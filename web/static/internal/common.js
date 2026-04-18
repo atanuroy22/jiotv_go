@@ -61,7 +61,7 @@ function applyCatchupToCards() {
   cards.forEach((card) => {
     const id = card && card.getAttribute("data-channel-id");
     if (id) {
-      card.setAttribute("href", base + id + suffix);
+      card.setAttribute("href", base + encodeURIComponent(id) + suffix);
     }
   });
 }

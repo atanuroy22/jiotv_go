@@ -19,6 +19,12 @@
     <a href="/" class="btn btn-ghost text-xl text-error" aria-label="Go to home page">{{ .Title }}</a>
   </div>
   <div class="navbar-end gap-4">
+    {{ if .player_url }}
+    <label class="flex items-center gap-2 cursor-pointer">
+      <span id="player-mode-label" class="font-medium">HD</span>
+      <input id="player-mode-toggle" type="checkbox" class="toggle toggle-success" onchange="togglePlayerMode()" />
+    </label>
+    {{ end }}
     <label class="flex items-center gap-2 cursor-pointer">
       <span id="catchup-toggle-label" class="font-medium">Catchup: OFF</span>
       <input id="catchup-toggle" type="checkbox" class="toggle toggle-warning" onchange="toggleCatchupMode()" />

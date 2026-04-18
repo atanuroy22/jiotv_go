@@ -3,9 +3,12 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
@@ -29,6 +32,7 @@ var (
 	Title            string
 	EnableDRM        bool
 	SONY_LIST        = []string{"154", "155", "162", "289", "291", "471", "474", "476", "483", "514", "524", "525", "697", "872", "873", "874", "891", "892", "1146", "1393", "1772", "1773", "1774", "1775"}
+	renderHDNEACache sync.Map
 )
 
 const (
@@ -36,7 +40,25 @@ const (
 	REFRESH_SSO_TOKEN_URL = urls.RefreshSSOTokenURL
 	PLAYER_USER_AGENT     = headers.UserAgentPlayTV
 	REQUEST_USER_AGENT    = headers.UserAgentOkHttp
+	hdneaCacheTTL         = 20 * time.Second // Short TTL to avoid reusing stale signed URLs during playback
+	hdneaRefreshLeadTime  = 20 * time.Second
 )
+
+type hdneaCacheEntry struct {
+	Token     string
+	UpdatedAt time.Time
+}
+
+// truncateToken returns first 10 and last 10 chars of token for logging
+func truncateToken(token string) string {
+	if len(token) == 0 {
+		return "(empty)"
+	}
+	if len(token) <= 20 {
+		return token
+	}
+	return token[:10] + "..." + token[len(token)-10:]
+}
 
 // Init initializes the necessary operations required for the handlers to work.
 func Init() {
@@ -221,8 +243,280 @@ func checkFieldExist(field string, check bool, c *fiber.Ctx) error {
 	return internalUtils.CheckFieldExist(c, field, check)
 }
 
+func isLikelyHLSURL(streamURL string) bool {
+	if streamURL == "" {
+		return false
+	}
+	urlLower := strings.ToLower(streamURL)
+	return strings.Contains(urlLower, ".m3u8")
+}
+
+func isAbsoluteHTTPURL(streamURL string) bool {
+	if streamURL == "" {
+		return false
+	}
+	urlLower := strings.ToLower(streamURL)
+	if !(strings.HasPrefix(urlLower, "http://") || strings.HasPrefix(urlLower, "https://")) {
+		return false
+	}
+	parsed, err := url.Parse(streamURL)
+	return err == nil && parsed.Scheme != "" && parsed.Host != ""
+}
+
+func absoluteBaseFromLiveResult(liveResult *television.LiveURLOutput) string {
+	if liveResult == nil {
+		return ""
+	}
+
+	candidates := []string{
+		liveResult.Bitrates.Auto,
+		liveResult.Bitrates.High,
+		liveResult.Bitrates.Medium,
+		liveResult.Bitrates.Low,
+		liveResult.Result,
+		liveResult.Mpd.Result,
+		liveResult.Mpd.Bitrates.Auto,
+		liveResult.Mpd.Bitrates.High,
+		liveResult.Mpd.Bitrates.Medium,
+		liveResult.Mpd.Bitrates.Low,
+	}
+
+	for _, candidate := range candidates {
+		if !isAbsoluteHTTPURL(candidate) {
+			continue
+		}
+		parsed, err := url.Parse(candidate)
+		if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+
+	return ""
+}
+
+func toAbsoluteStreamURL(streamURL string, liveResult *television.LiveURLOutput) string {
+	if streamURL == "" {
+		return ""
+	}
+	if isAbsoluteHTTPURL(streamURL) {
+		return streamURL
+	}
+	if strings.HasPrefix(streamURL, "//") {
+		return "https:" + streamURL
+	}
+
+	// Handle host without scheme: jiotv.example.com/path/file.m3u8
+	firstPart := strings.SplitN(streamURL, "/", 2)[0]
+	if strings.Contains(firstPart, ".") && !strings.HasPrefix(streamURL, "/") {
+		return "https://" + streamURL
+	}
+
+	if !strings.HasPrefix(streamURL, "/") {
+		streamURL = "/" + streamURL
+	}
+
+	base := absoluteBaseFromLiveResult(liveResult)
+	if base == "" {
+		base = "https://" + urls.JioTVCDNDomain
+	}
+
+	return base + streamURL
+}
+
+func stripHDNEAFromURL(streamURL string) string {
+	if streamURL == "" {
+		return streamURL
+	}
+	parsed, err := url.Parse(streamURL)
+	if err != nil {
+		return streamURL
+	}
+	query := parsed.Query()
+	query.Del("hdnea")
+	query.Del("__hdnea__")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func extractHDNEAFromURL(streamURL string) string {
+	if streamURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(streamURL)
+	if err != nil {
+		return ""
+	}
+	query := parsed.Query()
+	if token := query.Get("__hdnea__"); token != "" {
+		return token
+	}
+	if token := query.Get("hdnea"); token != "" {
+		return token
+	}
+	return ""
+}
+
+func hdneaRemainingLifetime(token string) (time.Duration, bool) {
+	if token == "" {
+		return 0, false
+	}
+
+	decodedToken, err := url.QueryUnescape(token)
+	if err == nil && decodedToken != "" {
+		token = decodedToken
+	}
+
+	expiryPattern := regexp.MustCompile(`exp=([0-9]+)`)
+	matches := expiryPattern.FindStringSubmatch(token)
+	if len(matches) != 2 {
+		return 0, false
+	}
+
+	expiryUnix, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	return time.Until(time.Unix(expiryUnix, 0)), true
+}
+
+func extractLiveResultHDNEA(liveResult *television.LiveURLOutput) string {
+	if liveResult == nil {
+		return ""
+	}
+
+	if liveResult.Hdnea != "" {
+		return liveResult.Hdnea
+	}
+
+	candidates := []string{
+		liveResult.Bitrates.Auto,
+		liveResult.Bitrates.High,
+		liveResult.Bitrates.Medium,
+		liveResult.Bitrates.Low,
+		liveResult.Result,
+		liveResult.Mpd.Result,
+		liveResult.Mpd.Bitrates.Auto,
+		liveResult.Mpd.Bitrates.High,
+		liveResult.Mpd.Bitrates.Medium,
+		liveResult.Mpd.Bitrates.Low,
+	}
+
+	for _, candidate := range candidates {
+		if token := extractHDNEAFromURL(candidate); token != "" {
+			return token
+		}
+	}
+
+	return ""
+}
+
+func liveResultNeedsRefresh(liveResult *television.LiveURLOutput) bool {
+	token := extractLiveResultHDNEA(liveResult)
+	remaining, ok := hdneaRemainingLifetime(token)
+	return ok && remaining <= hdneaRefreshLeadTime
+}
+
+func refreshLiveResultIfNeeded(channelID string, liveResult *television.LiveURLOutput) (*television.LiveURLOutput, error) {
+	if channelID == "" || liveResult == nil || !liveResultNeedsRefresh(liveResult) {
+		return liveResult, nil
+	}
+
+	utils.Log.Printf("HDNEA token is near expiry for channel %s; refreshing live URL", channelID)
+	refreshedResult, err := TV.Live(channelID)
+	if err != nil {
+		return liveResult, err
+	}
+
+	if refreshedResult == nil {
+		return liveResult, nil
+	}
+
+	return refreshedResult, nil
+}
+
+func getCachedHDNEA(channelID string) string {
+	if channelID == "" {
+		return ""
+	}
+	entryRaw, ok := renderHDNEACache.Load(channelID)
+	if !ok {
+		return ""
+	}
+	entry, ok := entryRaw.(hdneaCacheEntry)
+	if !ok {
+		renderHDNEACache.Delete(channelID)
+		return ""
+	}
+	if entry.Token == "" || time.Since(entry.UpdatedAt) > hdneaCacheTTL {
+		renderHDNEACache.Delete(channelID)
+		return ""
+	}
+	return entry.Token
+}
+
+func setCachedHDNEA(channelID, token string) {
+	if channelID == "" || token == "" {
+		return
+	}
+	renderHDNEACache.Store(channelID, hdneaCacheEntry{Token: token, UpdatedAt: time.Now()})
+}
+
+func selectBestLiveHLSURL(liveResult *television.LiveURLOutput, quality string) string {
+	if liveResult == nil {
+		return ""
+	}
+
+	// Try requested quality first.
+	selected := internalUtils.SelectQuality(quality, liveResult.Bitrates.Auto, liveResult.Bitrates.High, liveResult.Bitrates.Medium, liveResult.Bitrates.Low)
+	if selected != "" {
+		return selected
+	}
+
+	// Then try any other HLS bitrate that is available.
+	for _, candidate := range []string{liveResult.Bitrates.High, liveResult.Bitrates.Auto, liveResult.Bitrates.Medium, liveResult.Bitrates.Low} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+
+	// Some newer Jio channels return playable HLS in result instead of bitrates.
+	if isLikelyHLSURL(liveResult.Result) {
+		return liveResult.Result
+	}
+
+	// Safety fallback when MPD block contains an HLS URL (rare, but seen in API drift cases).
+	if isLikelyHLSURL(liveResult.Mpd.Result) {
+		return liveResult.Mpd.Result
+	}
+
+	return ""
+}
+
+func selectBestLiveMPDURL(liveResult *television.LiveURLOutput, quality string) string {
+	if liveResult == nil {
+		return ""
+	}
+
+	selected := internalUtils.SelectQuality(quality, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low)
+	if selected != "" {
+		return selected
+	}
+
+	for _, candidate := range []string{liveResult.Mpd.Bitrates.High, liveResult.Mpd.Bitrates.Auto, liveResult.Mpd.Bitrates.Medium, liveResult.Mpd.Bitrates.Low} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+
+	return liveResult.Mpd.Result
+}
+
 // LiveHandler handles the live channel stream route `/live/:id.m3u8`.
 func LiveHandler(c *fiber.Ctx) error {
+	// Ensure tokens are fresh before requesting Live stream
+	EnsureFreshCredentials()
+
 	id := c.Params("id")
 	// remove suffix .m3u8 if exists
 	id = strings.Replace(id, ".m3u8", "", 1)
@@ -248,88 +542,57 @@ func LiveHandler(c *fiber.Ctx) error {
 
 	// If getting Live stream failed, try refreshing tokens forcefully and retry once
 	if err != nil {
-		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after forced token refresh...", err)
 
-		// Attempt to refresh tokens forcefully
-		refreshErr := LoginRefreshAccessToken()
-		if refreshErr != nil {
-			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
-		}
-
-		// Also refresh SSO token just in case
-		ssoRefreshErr := LoginRefreshSSOToken()
-		if ssoRefreshErr != nil {
-			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
-		}
-
-		if refreshErr == nil || ssoRefreshErr == nil {
-			// Update the TV object with fresh credentials
-			freshCreds, credErr := utils.GetJIOTVCredentials()
-			if credErr == nil {
-				TV = television.New(freshCreds)
-				// Retry TV.Live
-				liveResult, err = TV.Live(id)
-				if err == nil {
-					utils.Log.Println("Retry successful, obtained Live stream")
-				} else {
-					utils.Log.Printf("Retry failed: %v", err)
-				}
+		// Force token refresh (bypasses 30-second interval for error recovery)
+		if ForceRefreshCredentials() {
+			// Retry TV.Live with fresh tokens
+			liveResult, err = TV.Live(id)
+			if err == nil {
+				utils.Log.Println("Retry successful after forced token refresh")
+			} else {
+				utils.Log.Printf("Retry failed even after token refresh: %v", err)
 			}
+		} else {
+			utils.Log.Println("Failed to refresh credentials during error recovery")
 		}
 	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
 	}
-
-	// Check if liveResult.Bitrates.Auto is empty, try fallback
-	if liveResult.Bitrates.Auto == "" {
-		if liveResult.Bitrates.High != "" {
-			liveResult.Bitrates.Auto = liveResult.Bitrates.High
-		} else if liveResult.Bitrates.Medium != "" {
-			liveResult.Bitrates.Auto = liveResult.Bitrates.Medium
-		} else if liveResult.Bitrates.Low != "" {
-			liveResult.Bitrates.Auto = liveResult.Bitrates.Low
-		} else if liveResult.Mpd.Result != "" {
-			// As a last resort, try using MPD result if it's an HLS compatible URL (unlikely but possible)
-			// or just fail.
-		}
+	if refreshedResult, refreshErr := refreshLiveResultIfNeeded(id, liveResult); refreshErr == nil && refreshedResult != nil {
+		liveResult = refreshedResult
 	}
 
-	// Check if liveResult.Bitrates.Auto is still empty
-	if liveResult.Bitrates.Auto == "" {
+	liveURL := selectBestLiveHLSURL(liveResult, "auto")
+	if liveURL == "" {
 		error_message := "No stream found for channel id: " + id + "Status: " + liveResult.Message
 		utils.Log.Println(error_message)
 		utils.Log.Println(liveResult)
 		return internalUtils.NotFoundError(c, error_message)
 	}
+	liveURL = toAbsoluteStreamURL(liveURL, liveResult)
+	if liveResult.Hdnea != "" {
+		setCachedHDNEA(id, liveResult.Hdnea)
+	}
 	// quote url as it will be passed as a query parameter
 	// It is required to quote the url as it may contain special characters like ? and &
-	// Ensure hdnea from Live is appended to subsequent requests
-	liveURL := liveResult.Bitrates.Auto
-	if liveResult.Hdnea != "" && !strings.Contains(liveURL, "hdnea=") {
-		sep := "?"
-		if strings.Contains(liveURL, "?") {
-			sep = "&"
-		}
-		liveURL = liveURL + sep + "hdnea=" + liveResult.Hdnea
-	}
 
 	coded_url, err := secureurl.EncryptURL(liveURL)
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.ForbiddenError(c, err)
 	}
-	// also add hdnea as an explicit query param for downstream (no client cookie)
 	redirectURL := "/render.m3u8?auth=" + coded_url + "&channel_key_id=" + id
-	if liveResult.Hdnea != "" {
-		redirectURL += "&hdnea=" + liveResult.Hdnea
-	}
 	return c.Redirect(redirectURL, fiber.StatusFound)
 }
 
 // LiveQualityHandler handles the live channel stream route `/live/:quality/:id.m3u8`.
 func LiveQualityHandler(c *fiber.Ctx) error {
+	// Ensure tokens are fresh before requesting Live stream with quality
+	EnsureFreshCredentials()
+
 	quality := c.Params("quality")
 	id := c.Params("id")
 	// remove suffix .m3u8 if exists
@@ -356,68 +619,44 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 
 	// If getting Live stream failed, try refreshing tokens forcefully and retry once
 	if err != nil {
-		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after token refresh...", err)
+		utils.Log.Printf("First attempt to get Live stream failed: %v. Retrying after forced token refresh...", err)
 
-		// Attempt to refresh tokens forcefully
-		refreshErr := LoginRefreshAccessToken()
-		if refreshErr != nil {
-			utils.Log.Printf("Failed to refresh AccessToken during retry: %v", refreshErr)
-		}
-
-		// Also refresh SSO token just in case
-		ssoRefreshErr := LoginRefreshSSOToken()
-		if ssoRefreshErr != nil {
-			utils.Log.Printf("Failed to refresh SSOToken during retry: %v", ssoRefreshErr)
-		}
-
-		if refreshErr == nil || ssoRefreshErr == nil {
-			// Update the TV object with fresh credentials
-			freshCreds, credErr := utils.GetJIOTVCredentials()
-			if credErr == nil {
-				TV = television.New(freshCreds)
-				// Retry TV.Live
-				liveResult, err = TV.Live(id)
-				if err == nil {
-					utils.Log.Println("Retry successful, obtained Live stream")
-				} else {
-					utils.Log.Printf("Retry failed: %v", err)
-				}
+		// Force token refresh (bypasses 30-second interval for error recovery)
+		if ForceRefreshCredentials() {
+			// Retry TV.Live with fresh tokens
+			liveResult, err = TV.Live(id)
+			if err == nil {
+				utils.Log.Println("Retry successful after forced token refresh")
+			} else {
+				utils.Log.Printf("Retry failed even after token refresh: %v", err)
 			}
+		} else {
+			utils.Log.Println("Failed to refresh credentials during error recovery")
 		}
 	}
 	if err != nil {
 		utils.Log.Println(err)
 		return internalUtils.InternalServerError(c, err)
 	}
-	Bitrates := liveResult.Bitrates
-	// if id[:2] == "sl" {
-	// 	return sonyLivRedirect(c, liveResult)
-	// }
+	if refreshedResult, refreshErr := refreshLiveResultIfNeeded(id, liveResult); refreshErr == nil && refreshedResult != nil {
+		liveResult = refreshedResult
+	}
 	// Channels with following IDs output audio only m3u8 when quality level is enforced
 	if id == "1349" || id == "1322" {
 		quality = "auto"
 	}
 
-	// select quality level based on query parameter
-	liveURL := internalUtils.SelectQuality(quality, Bitrates.Auto, Bitrates.High, Bitrates.Medium, Bitrates.Low)
+	// select quality level based on query parameter and API fallbacks.
+	liveURL := selectBestLiveHLSURL(liveResult, quality)
 	if liveURL == "" {
-		if Bitrates.High != "" {
-			liveURL = Bitrates.High
-		} else if Bitrates.Auto != "" {
-			liveURL = Bitrates.Auto
-		} else if Bitrates.Medium != "" {
-			liveURL = Bitrates.Medium
-		} else if Bitrates.Low != "" {
-			liveURL = Bitrates.Low
-		}
+		error_message := "No stream found for channel id: " + id + "Status: " + liveResult.Message
+		utils.Log.Println(error_message)
+		utils.Log.Println(liveResult)
+		return internalUtils.NotFoundError(c, error_message)
 	}
-
-	if liveResult.Hdnea != "" && !strings.Contains(liveURL, "hdnea=") {
-		sep := "?"
-		if strings.Contains(liveURL, "?") {
-			sep = "&"
-		}
-		liveURL = liveURL + sep + "hdnea=" + liveResult.Hdnea
+	liveURL = toAbsoluteStreamURL(liveURL, liveResult)
+	if liveResult.Hdnea != "" {
+		setCachedHDNEA(id, liveResult.Hdnea)
 	}
 
 	// quote url as it will be passed as a query parameter
@@ -427,15 +666,15 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 		return internalUtils.ForbiddenError(c, err)
 	}
 	redirectURL := "/render.m3u8?auth=" + coded_url + "&channel_key_id=" + id + "&q=" + quality
-	if liveResult.Hdnea != "" {
-		redirectURL += "&hdnea=" + liveResult.Hdnea
-	}
 	return c.Redirect(redirectURL, fiber.StatusFound)
 }
 
 // RenderHandler handles M3U8 file for modification
 // This handler shall replace JioTV server URLs with our own server URLs
 func RenderHandler(c *fiber.Ctx) error {
+	// Ensure tokens are fresh before rendering M3U8
+	EnsureFreshCredentials()
+
 	// URL to be rendered
 	auth := c.Query("auth")
 	if err := internalUtils.ValidateRequiredParam("auth", auth); err != nil {
@@ -453,58 +692,172 @@ func RenderHandler(c *fiber.Ctx) error {
 		return err
 	}
 
-	// If hdnea is present in query and missing in the decrypted URL, append it so TV.Render can forward as request cookie upstream
-	if hdnea := c.Query("hdnea"); hdnea != "" && !strings.Contains(decoded_url, "hdnea=") {
-		sep := "?"
-		if strings.Contains(decoded_url, "?") {
-			sep = "&"
-		}
-		decoded_url = decoded_url + sep + "hdnea=" + hdnea
+	decoded_url = toAbsoluteStreamURL(decoded_url, nil)
+
+	// Extract fresh token from URL if present (primary source, always fresh)
+	urlToken := extractHDNEAFromURL(decoded_url)
+	var cachedHDNEA string
+
+	// AGGRESSIVE REFRESH: Always prefer fresh URL token over cache to prevent 403 errors from stale tokens
+	if urlToken != "" {
+		cachedHDNEA = urlToken
+	} else {
+		cachedHDNEA = getCachedHDNEA(channel_id)
 	}
 
-	renderResult, statusCode, newHdnea := TV.Render(decoded_url)
+	if remaining, ok := hdneaRemainingLifetime(cachedHDNEA); ok && remaining <= hdneaRefreshLeadTime {
+		if refreshedResult, refreshErr := TV.Live(channel_id); refreshErr == nil && refreshedResult != nil {
+			if refreshedURL := selectBestLiveHLSURL(refreshedResult, c.Query("q")); refreshedURL != "" {
+				decoded_url = toAbsoluteStreamURL(refreshedURL, refreshedResult)
+				cachedHDNEA = extractLiveResultHDNEA(refreshedResult)
+				if cachedHDNEA != "" {
+					setCachedHDNEA(channel_id, cachedHDNEA)
+				}
+			}
+		}
+	}
 
-	// If we get a 403 (Forbidden), try refreshing tokens and retry once
-	if statusCode == fiber.StatusForbidden {
-		if err := EnsureFreshTokens(); err != nil {
-			utils.Log.Printf("Failed to refresh tokens after 403: %v", err)
-			// Retry the request once after refreshing tokens
-			utils.Log.Println("Retrying render request after token refresh")
-			renderResult, statusCode, newHdnea = TV.Render(decoded_url)
-		} else {
-			utils.Log.Println("Unable to refresh tokens after expiration")
-			return internalUtils.ForbiddenError(c, "Access forbidden. Something went wrong!")
+	// DEBUG: Log token selection
+	if os.Getenv("JIOTV_DEBUG") == "true" {
+		sourceStr := "URL"
+		if urlToken == "" && cachedHDNEA != "" {
+			sourceStr = "cache"
+		}
+		if urlToken == "" && cachedHDNEA == "" {
+			sourceStr = "none"
+		}
+		utils.Log.Printf("[DEBUG] Token selection - URL token: %s | Cached token: %s | Using: %s (source: %s)",
+			truncateToken(urlToken), truncateToken(getCachedHDNEA(channel_id)), truncateToken(cachedHDNEA), sourceStr)
+	}
+
+	renderURL := decoded_url
+	renderResult, statusCode, newHdnea := TV.Render(renderURL, cachedHDNEA)
+
+	// DEBUG: Log token extraction and response
+	if os.Getenv("JIOTV_DEBUG") == "true" {
+		utils.Log.Printf("[DEBUG] Render response - Status: %d | Token from response: %s", statusCode, truncateToken(newHdnea))
+	}
+
+	// Always cache fresh token from response for fallback on next request
+	if newHdnea != "" {
+		setCachedHDNEA(channel_id, newHdnea)
+		cachedHDNEA = newHdnea
+	}
+
+	// AGGRESSIVE RETRY: On 403/401, refresh tokens again and retry
+	// This handles edge case where initial refresh wasn't complete
+	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] RenderHandler: Got %d on first attempt, refreshing tokens again", statusCode)
+		}
+
+		// Force refresh credentials again because the upstream already rejected the request
+		ForceRefreshCredentials()
+
+		// Clear cache first
+		renderHDNEACache.Delete(channel_id)
+
+		// Retry the render call with no cached token (forces CDN to provide fresh)
+		renderResult, statusCode, newHdnea = TV.Render(renderURL, "")
+
+		if newHdnea != "" {
+			setCachedHDNEA(channel_id, newHdnea)
+			cachedHDNEA = newHdnea
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] RenderHandler retry: Got fresh token")
+			}
+		}
+
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] RenderHandler retry completed - new status: %d", statusCode)
+		}
+	} else if statusCode == fiber.StatusNotFound {
+		wasNotFound := true
+		strippedURL := stripHDNEAFromURL(decoded_url)
+		if strippedURL != renderURL {
+			renderURL = strippedURL
+			renderResult, statusCode, newHdnea = TV.Render(renderURL, cachedHDNEA)
+			if newHdnea != "" {
+				setCachedHDNEA(channel_id, newHdnea)
+				cachedHDNEA = newHdnea
+			}
+		}
+
+		// Some channels occasionally return stale HLS manifests (404).
+		// Do a bounded retry with a freshly fetched live URL.
+		// If the requested quality variant is broken, try alternative qualities once.
+		if wasNotFound && channel_id != "" {
+			retryQuality := c.Query("q")
+			if retryQuality == "" {
+				retryQuality = "auto"
+			}
+
+			if refreshedLiveResult, refreshErr := TV.Live(channel_id); refreshErr == nil && refreshedLiveResult != nil {
+				if freshToken := extractLiveResultHDNEA(refreshedLiveResult); freshToken != "" {
+					setCachedHDNEA(channel_id, freshToken)
+					cachedHDNEA = freshToken
+				}
+
+				qualityCandidates := []string{retryQuality, "auto", "high", "medium", "low"}
+				triedURL := map[string]bool{renderURL: true}
+
+				for _, candidateQuality := range qualityCandidates {
+					candidateURL := selectBestLiveHLSURL(refreshedLiveResult, candidateQuality)
+					candidateURL = toAbsoluteStreamURL(candidateURL, refreshedLiveResult)
+					if candidateURL == "" || triedURL[candidateURL] {
+						continue
+					}
+					triedURL[candidateURL] = true
+
+					if os.Getenv("JIOTV_DEBUG") == "true" {
+						utils.Log.Printf("[DEBUG] RenderHandler 404 recovery - trying quality=%s for channel=%s", candidateQuality, channel_id)
+					}
+
+					renderURL = candidateURL
+					renderResult, statusCode, newHdnea = TV.Render(renderURL, cachedHDNEA)
+					if newHdnea != "" {
+						setCachedHDNEA(channel_id, newHdnea)
+						cachedHDNEA = newHdnea
+					}
+
+					if statusCode == fiber.StatusOK {
+						break
+					}
+				}
+			}
 		}
 	}
 	// No client cookie: if upstream rotated __hdnea__, we'll embed the fresh token into rewritten URLs below
 
 	// baseUrl is the part of the url excluding suffix file.m3u8 and params is the part of the url after the suffix
-	split_url_by_params := strings.Split(decoded_url, "?")
+	split_url_by_params := strings.Split(renderURL, "?")
 	baseStringUrl := split_url_by_params[0]
 	// Pattern to match file names ending with .m3u8
 	pattern := `[a-z0-9=\_\-A-Z\.]*\.m3u8`
 	re := regexp.MustCompile(pattern)
 	// Add baseUrl to all the file names ending with .m3u8
 	baseUrl := []byte(re.ReplaceAllString(baseStringUrl, ""))
-	params := split_url_by_params[1]
-	// If upstream rotated __hdnea__, update params so rewritten URLs carry the fresh token value
-	if newHdnea != "" {
-		if strings.Contains(params, "hdnea=") {
-			parts := strings.Split(params, "&")
-			for i, p := range parts {
-				if strings.HasPrefix(p, "hdnea=") {
-					parts[i] = "hdnea=" + newHdnea
-					break
+	params := ""
+	if len(split_url_by_params) > 1 {
+		params = split_url_by_params[1]
+	}
+	if params != "" {
+		if parsedParams, parseErr := url.ParseQuery(params); parseErr == nil {
+			parsedParams.Del("hdnea")
+			parsedParams.Del("__hdnea__")
+			encodedParams := parsedParams.Encode()
+			if cachedHDNEA != "" {
+				if encodedParams != "" {
+					params = encodedParams + "&__hdnea__=" + cachedHDNEA
+				} else {
+					params = "__hdnea__=" + cachedHDNEA
 				}
-			}
-			params = strings.Join(parts, "&")
-		} else {
-			if params == "" {
-				params = "hdnea=" + newHdnea
 			} else {
-				params = params + "&hdnea=" + newHdnea
+				params = encodedParams
 			}
 		}
+	} else if cachedHDNEA != "" {
+		params = "__hdnea__=" + cachedHDNEA
 	}
 
 	// replacer replaces all the file names ending with .m3u8 and .ts with our own server URLs
@@ -514,9 +867,9 @@ func RenderHandler(c *fiber.Ctx) error {
 		case bytes.HasSuffix(match, []byte(".m3u8")):
 			return television.ReplaceM3U8(baseUrl, match, params, channel_id, c.Query("q"))
 		case bytes.HasSuffix(match, []byte(".ts")):
-			return television.ReplaceTS(baseUrl, match, params)
+			return television.ReplaceTS(baseUrl, match, params, channel_id)
 		case bytes.HasSuffix(match, []byte(".aac")):
-			return television.ReplaceAAC(baseUrl, match, params)
+			return television.ReplaceAAC(baseUrl, match, params, channel_id)
 		default:
 			return match
 		}
@@ -550,6 +903,11 @@ func RenderHandler(c *fiber.Ctx) error {
 		utils.Log.Println(string(renderResult))
 	}
 	internalUtils.SetMustRevalidateHeader(c, 3)
+
+	// CRITICAL: Set correct Content-Type for M3U8 so HLS.js recognizes it as media manifest
+	c.Response().Header.Set("Content-Type", "application/vnd.apple.mpegurl")
+	c.Response().Header.Set("Access-Control-Allow-Origin", "*")
+
 	return c.Status(statusCode).Send(renderResult)
 }
 
@@ -573,6 +931,9 @@ func SLHandler(c *fiber.Ctx) error {
 
 // RenderKeyHandler requests m3u8 key from JioTV server
 func RenderKeyHandler(c *fiber.Ctx) error {
+	// Ensure tokens are fresh before requesting DRM key
+	EnsureFreshCredentials()
+
 	channel_id := c.Query("channel_key_id")
 	auth := c.Query("auth")
 	// parse incoming hdnea query and set as request cookie only for upstream call (no client cookie)
@@ -618,12 +979,51 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 	if err := proxy.Do(c, decoded_url, TV.Client); err != nil {
 		return err
 	}
+
+	statusCode := c.Response().StatusCode()
+	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] RenderKeyHandler got %d response - forcing refresh and retrying", statusCode)
+		}
+
+		c.Response().Reset()
+		c.Request().Header.DelCookie("__hdnea__")
+		retryUrl := stripHDNEAFromURL(decoded_url)
+		ForceRefreshCredentials()
+
+		// Rebuild the request cookies from the stripped URL for a clean retry
+		if retryParams := strings.Split(retryUrl, "?"); len(retryParams) > 1 {
+			for _, param := range strings.Split(retryParams[1], "&") {
+				parts := strings.SplitN(param, "=", 2)
+				if len(parts) == 2 {
+					c.Request().Header.SetCookie(parts[0], parts[1])
+				}
+			}
+		}
+
+		for key, value := range TV.Headers {
+			c.Request().Header.Set(key, value)
+		}
+		c.Request().Header.Set("srno", "230203144000")
+		c.Request().Header.Set("ssotoken", TV.SsoToken)
+		c.Request().Header.Set("channelId", channel_id)
+		c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
+
+		if err := proxy.Do(c, retryUrl, TV.Client); err != nil {
+			return err
+		}
+	}
 	c.Response().Header.Del(fiber.HeaderServer)
 	return nil
 }
 
 // RenderTSHandler loads TS file from JioTV server
 func RenderTSHandler(c *fiber.Ctx) error {
+	// Ensure tokens are fresh before proxying TS segments
+	EnsureFreshCredentials()
+
+	channelID := c.Query("channel_key_id")
+	quality := c.Query("q")
 	auth := c.Query("auth")
 	// parse incoming hdnea query and set as request cookie only for upstream call (no client cookie)
 	if hdnea := c.Query("hdnea"); hdnea != "" {
@@ -655,7 +1055,38 @@ func RenderTSHandler(c *fiber.Ctx) error {
 		}
 	}
 
-	return internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT)
+	if err := internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT); err != nil {
+		return err
+	}
+
+	statusCode := c.Response().StatusCode()
+	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
+		if os.Getenv("JIOTV_DEBUG") == "true" {
+			utils.Log.Printf("[DEBUG] RenderTSHandler got %d response - forcing refresh and retrying", statusCode)
+		}
+
+		c.Response().Reset()
+		c.Request().Header.DelCookie("__hdnea__")
+		ForceRefreshCredentials()
+
+		retryUrl := stripHDNEAFromURL(decoded_url)
+		if channelID != "" {
+			if refreshedResult, refreshErr := TV.Live(channelID); refreshErr == nil && refreshedResult != nil {
+				if refreshedURL := selectBestLiveHLSURL(refreshedResult, quality); refreshedURL != "" {
+					retryUrl = toAbsoluteStreamURL(refreshedURL, refreshedResult)
+					if refreshedHDNEA := extractLiveResultHDNEA(refreshedResult); refreshedHDNEA != "" {
+						setCachedHDNEA(channelID, refreshedHDNEA)
+					}
+				}
+			}
+		}
+
+		if err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ChannelsHandler fetch all channels from JioTV API
@@ -784,11 +1215,12 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	var player_url string
-	// Default to MPD (DRM/High Quality) player if not a custom channel
-	if isCustomChannel(id) {
-		player_url = "/player/" + id + "?q=" + quality
-	} else {
+	if EnableDRM {
+		// Sony channels should always use DRM player for consistency
+		// This avoids routing issues and 403 errors from mixed player usage
 		player_url = "/mpd/" + id + "?q=" + quality
+	} else {
+		player_url = "/player/" + id + "?q=" + quality
 	}
 
 	internalUtils.SetCacheHeader(c, 3600)
