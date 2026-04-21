@@ -454,13 +454,13 @@ func GetRequestClient() *fasthttp.Client {
 		} else {
 			// http proxy
 			return &fasthttp.Client{
-				Dial: fasthttpproxy.FasthttpHTTPDialerDualStackTimeout(proxy, 10*time.Second),
+				Dial: fasthttpproxy.FasthttpHTTPDialerDualStackTimeout(proxy, 30*time.Second),
 			}
 		}
 	}
 	return &fasthttp.Client{
 		Dial: fasthttp.DialFunc(func(addr string) (netConn net.Conn, err error) {
-			return fasthttp.DialDualStackTimeout(addr, 5*time.Second)
+			return fasthttp.DialDualStackTimeout(addr, 30*time.Second)
 		}),
 	}
 }

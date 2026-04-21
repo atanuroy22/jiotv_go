@@ -337,7 +337,6 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 			drmMpdOutput, err = getDrmMpd(channelID, quality)
 			if err == nil {
 				utils.Log.Println("Retry successful after forced token refresh")
-				return nil // Early return - success
 			}
 		}
 

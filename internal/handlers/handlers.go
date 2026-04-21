@@ -33,6 +33,7 @@ var (
 	EnableDRM        bool
 	SONY_LIST        = []string{"154", "155", "162", "289", "291", "471", "474", "476", "483", "514", "524", "525", "697", "872", "873", "874", "891", "892", "1146", "1393", "1772", "1773", "1774", "1775"}
 	renderHDNEACache sync.Map
+	renderM3U8Cache  sync.Map // Cache for rendered M3U8 manifests
 )
 
 const (
@@ -42,10 +43,16 @@ const (
 	REQUEST_USER_AGENT    = headers.UserAgentOkHttp
 	hdneaCacheTTL         = 20 * time.Second // Short TTL to avoid reusing stale signed URLs during playback
 	hdneaRefreshLeadTime  = 20 * time.Second
+	renderM3U8CacheTTL    = 3 * time.Second  // Cache M3U8 for 3 seconds to reduce repeated requests
 )
 
 type hdneaCacheEntry struct {
 	Token     string
+	UpdatedAt time.Time
+}
+
+type renderM3U8CacheEntry struct {
+	Content   string
 	UpdatedAt time.Time
 }
 
@@ -685,6 +692,25 @@ func RenderHandler(c *fiber.Ctx) error {
 	if err := internalUtils.ValidateRequiredParam("channel_key_id", channel_id); err != nil {
 		return err
 	}
+
+	// Check cache first
+	quality := c.Query("q")
+	if quality == "" {
+		quality = "auto"
+	}
+	cacheKey := channel_id + ":" + quality
+	
+	if cached, ok := renderM3U8Cache.Load(cacheKey); ok {
+		entry := cached.(renderM3U8CacheEntry)
+		if time.Since(entry.UpdatedAt) < renderM3U8CacheTTL {
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] M3U8 cache hit for %s", cacheKey)
+			}
+			c.Set("Content-Type", "application/vnd.apple.mpegurl")
+			return c.SendString(entry.Content)
+		}
+	}
+
 	// decrypt url
 	decoded_url, err := secureurl.DecryptURL(auth)
 	if err != nil {
@@ -798,7 +824,7 @@ func RenderHandler(c *fiber.Ctx) error {
 					cachedHDNEA = freshToken
 				}
 
-				qualityCandidates := []string{retryQuality, "auto", "high", "medium", "low"}
+				qualityCandidates := []string{retryQuality, "auto", "high"}
 				triedURL := map[string]bool{renderURL: true}
 
 				for _, candidateQuality := range qualityCandidates {
@@ -903,6 +929,14 @@ func RenderHandler(c *fiber.Ctx) error {
 		utils.Log.Println(string(renderResult))
 	}
 	internalUtils.SetMustRevalidateHeader(c, 3)
+
+	// Cache successful M3U8 responses
+	if statusCode == fiber.StatusOK {
+		renderM3U8Cache.Store(cacheKey, renderM3U8CacheEntry{
+			Content:   string(renderResult),
+			UpdatedAt: time.Now(),
+		})
+	}
 
 	// CRITICAL: Set correct Content-Type for M3U8 so HLS.js recognizes it as media manifest
 	c.Response().Header.Set("Content-Type", "application/vnd.apple.mpegurl")
