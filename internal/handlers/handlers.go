@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -184,7 +185,7 @@ func IndexHandler(c *fiber.Ctx) error {
 	category := c.Query("category")
 
 	// Process logo URLs for all channels
-	hostURL := c.Protocol() + "://" + c.Hostname()
+	hostURL := requestHostURL(c)
 	for i, channel := range channels.Result {
 		if strings.HasPrefix(channel.LogoURL, "http://") || strings.HasPrefix(channel.LogoURL, "https://") {
 			// Custom channel with full URL, use as-is
@@ -261,6 +262,40 @@ func isAbsoluteHTTPURL(streamURL string) bool {
 	}
 	parsed, err := url.Parse(streamURL)
 	return err == nil && parsed.Scheme != "" && parsed.Host != ""
+}
+
+func requestHostURL(c *fiber.Ctx) string {
+	host := strings.TrimSpace(c.Get(fiber.HeaderHost))
+	if host == "" {
+		host = strings.TrimSpace(c.Hostname())
+	}
+	if host == "" {
+		return ""
+	}
+	return strings.ToLower(c.Protocol()) + "://" + host
+}
+
+// isTrustedPlaybackOrigin allows DRM playback only on secure origins or loopback hosts.
+func isTrustedPlaybackOrigin(c *fiber.Ctx) bool {
+	if strings.EqualFold(c.Protocol(), "https") {
+		return true
+	}
+
+	host := strings.ToLower(strings.TrimSpace(c.Hostname()))
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+
+	if host == "localhost" {
+		return true
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+
+	return false
 }
 
 func absoluteBaseFromLiveResult(liveResult *television.LiveURLOutput) string {
@@ -898,6 +933,15 @@ func RenderHandler(c *fiber.Ctx) error {
 	// Execute replacer_key function on renderResult
 	renderResult = re_key.ReplaceAllFunc(renderResult, replacer_key)
 
+	if hostURL := requestHostURL(c); hostURL != "" {
+		prefix := []byte("/render.")
+		absolutePrefix := []byte(hostURL + "/render.")
+		if bytes.HasPrefix(renderResult, prefix) {
+			renderResult = append(absolutePrefix, renderResult[len(prefix):]...)
+		}
+		renderResult = bytes.ReplaceAll(renderResult, []byte("\n/render."), []byte("\n"+hostURL+"/render."))
+	}
+
 	if statusCode != fiber.StatusOK {
 		utils.Log.Println("Error rendering M3U8 file")
 		utils.Log.Println(string(renderResult))
@@ -976,8 +1020,10 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 	c.Request().Header.Set("ssotoken", TV.SsoToken)
 	c.Request().Header.Set("channelId", channel_id)
 	c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
-	if err := proxy.Do(c, decoded_url, TV.Client); err != nil {
+	if newHdnea, err := internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT); err != nil {
 		return err
+	} else if newHdnea != "" && channel_id != "" {
+		setCachedHDNEA(channel_id, newHdnea)
 	}
 
 	statusCode := c.Response().StatusCode()
@@ -1009,8 +1055,10 @@ func RenderKeyHandler(c *fiber.Ctx) error {
 		c.Request().Header.Set("channelId", channel_id)
 		c.Request().Header.Set("User-Agent", PLAYER_USER_AGENT)
 
-		if err := proxy.Do(c, retryUrl, TV.Client); err != nil {
+		if retryHdnea, err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
 			return err
+		} else if retryHdnea != "" && channel_id != "" {
+			setCachedHDNEA(channel_id, retryHdnea)
 		}
 	}
 	c.Response().Header.Del(fiber.HeaderServer)
@@ -1055,8 +1103,10 @@ func RenderTSHandler(c *fiber.Ctx) error {
 		}
 	}
 
-	if err := internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT); err != nil {
+	if newHdnea, err := internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT); err != nil {
 		return err
+	} else if newHdnea != "" && channelID != "" {
+		setCachedHDNEA(channelID, newHdnea)
 	}
 
 	statusCode := c.Response().StatusCode()
@@ -1081,8 +1131,10 @@ func RenderTSHandler(c *fiber.Ctx) error {
 			}
 		}
 
-		if err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
+		if newHdnea, err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
 			return err
+		} else if newHdnea != "" && channelID != "" {
+			setCachedHDNEA(channelID, newHdnea)
 		}
 	}
 
@@ -1108,7 +1160,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	}
 
 	// hostUrl should be request URL like http://localhost:5001
-	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
+	hostURL := requestHostURL(c)
 
 	// Check if the query parameter "type" is set to "m3u"
 	if c.Query("type") == "m3u" {
@@ -1184,8 +1236,9 @@ func ChannelsHandler(c *fiber.Ctx) error {
 func PlayHandler(c *fiber.Ctx) error {
 	id := c.Params("id")
 	quality := c.Query("q")
+	requestedQuality := quality
 	if quality == "" {
-		quality = "high"
+		quality = "low"
 	}
 
 	if isCustomChannel(id) {
@@ -1215,19 +1268,25 @@ func PlayHandler(c *fiber.Ctx) error {
 	}
 
 	var player_url string
-	if EnableDRM {
-		// Sony channels should always use DRM player for consistency
-		// This avoids routing issues and 403 errors from mixed player usage
-		player_url = "/mpd/" + id + "?q=" + quality
+	forceAutoPlayerMode := false
+	if EnableDRM && isTrustedPlaybackOrigin(c) {
+		drmQuality := quality
+		if requestedQuality == "" {
+			drmQuality = "auto"
+		}
+		// Use the DRM player on trusted origins so secure browsers can load Widevine.
+		player_url = "/mpd/" + id + "?q=" + drmQuality
 	} else {
-		player_url = "/player/" + id + "?q=" + quality
+		player_url = "/player/" + id + "?q=" + quality + "&af=1"
+		forceAutoPlayerMode = true
 	}
 
 	internalUtils.SetCacheHeader(c, 3600)
 	return c.Render("views/play", fiber.Map{
-		"Title":      Title,
-		"player_url": player_url,
-		"ChannelID":  id,
+		"Title":                  Title,
+		"player_url":             player_url,
+		"ChannelID":              id,
+		"force_auto_player_mode": forceAutoPlayerMode,
 	})
 }
 
@@ -1262,7 +1321,8 @@ func PlaylistHandler(c *fiber.Ctx) error {
 // ImageHandler loads image from JioTV server
 func ImageHandler(c *fiber.Ctx) error {
 	url := "https://jiotv.catchup.cdn.jio.com/dare_images/images/" + c.Params("file")
-	return internalUtils.ProxyRequest(c, url, TV.Client, REQUEST_USER_AGENT)
+	_, err := internalUtils.ProxyRequest(c, url, TV.Client, REQUEST_USER_AGENT)
+	return err
 }
 
 func DASHTimeHandler(c *fiber.Ctx) error {

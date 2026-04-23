@@ -96,6 +96,7 @@
         const hlsFallbackUrl = "{{ .hls_fallback_url }}";
         const playerMode = "{{ .player_mode }}";  // "hd" or "auto"
         let hasFallenBack = false;
+        let mutedAutoplayFallbackUsed = false;
         let lastTokenRefreshTime = Date.now();
         const TOKEN_REFRESH_INTERVAL = 60000; // Refresh every 60 seconds (tokens expire ~90-120s)
         let segmentFail403Count = 0;
@@ -149,6 +150,23 @@
 
         // Default to unmuted playback. If autoplay is blocked, we fallback to muted.
         video.muted = false;
+
+        const attemptAutoUnmute = async (reason) => {
+          if (!video.muted) {
+            return;
+          }
+          video.muted = false;
+          try {
+            await video.play();
+            mutedAutoplayFallbackUsed = false;
+            console.log("Recovered from muted autoplay fallback:", reason);
+          } catch (unmuteError) {
+            video.muted = true;
+            if (reason === "interaction") {
+              console.warn("User interaction unmute retry failed", unmuteError);
+            }
+          }
+        };
 
         // Enhanced error handler with recovery logic
         player.addEventListener("error", (event) => {
@@ -266,25 +284,25 @@
           .getNetworkingEngine()
           .registerResponseFilter(function (type, response, context) {
             if (type == shaka.net.NetworkingEngine.RequestType.SEGMENT) {
-              const status = response.status[0];
-              if (Array.isArray(status) && status.length > 0) {
-                const statusCode = status[0];
-                if (statusCode === 403) {
-                  segmentFail403Count++;
-                  console.warn("403 error on segment request, count:", segmentFail403Count);
-                  
-                  // If in auto mode and we have 403 failures, we can retry by refreshing
-                  // The server-side token refresh should handle this
-                  if (playerMode === "auto" && segmentFail403Count > MAX_403_FAILURES) {
-                    // This will trigger fallback through error handler
-                    throw new shaka.util.Error(
-                      shaka.util.Error.Severity.CRITICAL,
-                      shaka.util.Error.Category.NETWORK,
-                      shaka.util.Error.Code.HTTP_ERROR,
-                      403,
-                      "Too many 403 errors on segments"
-                    );
-                  }
+              const statusCode = typeof response.status === "number"
+                ? response.status
+                : (Array.isArray(response.status) && response.status.length > 0 ? response.status[0] : undefined);
+
+              if (statusCode === 403) {
+                segmentFail403Count++;
+                console.warn("403 error on segment request, count:", segmentFail403Count);
+                
+                // If in auto mode and we have 403 failures, we can retry by refreshing
+                // The server-side token refresh should handle this
+                if (playerMode === "auto" && segmentFail403Count > MAX_403_FAILURES) {
+                  // This will trigger fallback through error handler
+                  throw new shaka.util.Error(
+                    shaka.util.Error.Severity.CRITICAL,
+                    shaka.util.Error.Category.NETWORK,
+                    shaka.util.Error.Code.HTTP_ERROR,
+                    403,
+                    "Too many 403 errors on segments"
+                  );
                 }
               }
             }
@@ -298,6 +316,7 @@
           } catch (autoplayError) {
             // Retry once in muted mode for stricter autoplay policies.
             console.warn("Autoplay blocked, retrying muted", autoplayError);
+            mutedAutoplayFallbackUsed = true;
             video.muted = true;
             try {
               await video.play();
@@ -350,6 +369,20 @@
         
         video.addEventListener("playing", () => {
           segmentFail403Count = 0;  // Reset 403 counter on successful play
+
+          // Some browsers allow audio shortly after muted autoplay started.
+          if (mutedAutoplayFallbackUsed) {
+            setTimeout(() => {
+              attemptAutoUnmute("delayed-retry");
+            }, 1500);
+          }
+        });
+
+        const handleFirstInteraction = () => {
+          attemptAutoUnmute("interaction");
+        };
+        ["click", "touchstart", "keydown"].forEach((eventName) => {
+          window.addEventListener(eventName, handleFirstInteraction, { once: true });
         });
 
         // Initial state

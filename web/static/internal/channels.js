@@ -12,6 +12,102 @@ const {
   "portexe-quality-select": qualityElement
 } = elements;
 
+function initRemoteSelectFallback(selectElement) {
+  if (!selectElement) {
+    return;
+  }
+
+  const openState = {
+    expanded: false,
+    startIndex: 0,
+    pendingIndex: 0,
+  };
+
+  selectElement.setAttribute("data-remote-select", "true");
+
+  const getMaxIndex = () => Math.max(0, selectElement.options.length - 1);
+
+  const clampIndex = (index) => {
+    const max = getMaxIndex();
+    return Math.min(Math.max(index, 0), max);
+  };
+
+  const setPending = (index) => {
+    openState.pendingIndex = clampIndex(index);
+    selectElement.selectedIndex = openState.pendingIndex;
+  };
+
+  const commitPending = () => {
+    setPending(openState.pendingIndex);
+    selectElement.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const cancelPending = () => {
+    setPending(openState.startIndex);
+  };
+
+  selectElement.addEventListener("focus", () => {
+    openState.startIndex = selectElement.selectedIndex;
+    openState.pendingIndex = selectElement.selectedIndex;
+  });
+
+  selectElement.addEventListener("keydown", (event) => {
+    const isEnterKey = event.key === "Enter" || event.keyCode === 13;
+    const isSpaceKey = event.key === " " || event.keyCode === 32;
+    const isUpKey = event.key === "ArrowUp" || event.keyCode === 38;
+    const isDownKey = event.key === "ArrowDown" || event.keyCode === 40;
+    const isEscapeKey = event.key === "Escape" || event.keyCode === 27;
+
+    if (!openState.expanded && (isEnterKey || isSpaceKey)) {
+      openState.expanded = true;
+      openState.startIndex = selectElement.selectedIndex;
+      openState.pendingIndex = selectElement.selectedIndex;
+      event.preventDefault();
+      return;
+    }
+
+    if (!openState.expanded) {
+      return;
+    }
+
+    if (isDownKey) {
+      setPending(openState.pendingIndex + 1);
+      event.preventDefault();
+      return;
+    }
+
+    if (isUpKey) {
+      setPending(openState.pendingIndex - 1);
+      event.preventDefault();
+      return;
+    }
+
+    if (isEnterKey || isSpaceKey) {
+      commitPending();
+      openState.expanded = false;
+      event.preventDefault();
+      return;
+    }
+
+    if (isEscapeKey) {
+      cancelPending();
+      openState.expanded = false;
+      event.preventDefault();
+    }
+  });
+
+  selectElement.addEventListener("blur", () => {
+    if (openState.expanded) {
+      commitPending();
+      openState.expanded = false;
+    }
+  });
+}
+
+initRemoteSelectFallback(qualityElement);
+initRemoteSelectFallback(categoryElement);
+initRemoteSelectFallback(languageElement);
+
 catLangApplyButton.addEventListener("click", () => {
   // Apply URL parameters and reload
   updateUrlParameters({
