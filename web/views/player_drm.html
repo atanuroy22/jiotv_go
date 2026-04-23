@@ -284,25 +284,25 @@
           .getNetworkingEngine()
           .registerResponseFilter(function (type, response, context) {
             if (type == shaka.net.NetworkingEngine.RequestType.SEGMENT) {
-              const status = response.status[0];
-              if (Array.isArray(status) && status.length > 0) {
-                const statusCode = status[0];
-                if (statusCode === 403) {
-                  segmentFail403Count++;
-                  console.warn("403 error on segment request, count:", segmentFail403Count);
-                  
-                  // If in auto mode and we have 403 failures, we can retry by refreshing
-                  // The server-side token refresh should handle this
-                  if (playerMode === "auto" && segmentFail403Count > MAX_403_FAILURES) {
-                    // This will trigger fallback through error handler
-                    throw new shaka.util.Error(
-                      shaka.util.Error.Severity.CRITICAL,
-                      shaka.util.Error.Category.NETWORK,
-                      shaka.util.Error.Code.HTTP_ERROR,
-                      403,
-                      "Too many 403 errors on segments"
-                    );
-                  }
+              const statusCode = typeof response.status === "number"
+                ? response.status
+                : (Array.isArray(response.status) && response.status.length > 0 ? response.status[0] : undefined);
+
+              if (statusCode === 403) {
+                segmentFail403Count++;
+                console.warn("403 error on segment request, count:", segmentFail403Count);
+                
+                // If in auto mode and we have 403 failures, we can retry by refreshing
+                // The server-side token refresh should handle this
+                if (playerMode === "auto" && segmentFail403Count > MAX_403_FAILURES) {
+                  // This will trigger fallback through error handler
+                  throw new shaka.util.Error(
+                    shaka.util.Error.Severity.CRITICAL,
+                    shaka.util.Error.Category.NETWORK,
+                    shaka.util.Error.Code.HTTP_ERROR,
+                    403,
+                    "Too many 403 errors on segments"
+                  );
                 }
               }
             }

@@ -751,7 +751,15 @@ func DashHandler(c *fiber.Ctx) error {
 
 	// Set HDNEA cookie if we have it
 	if hdneaToken != "" {
-		c.Request().Header.SetCookie("__hdnea__", hdneaToken)
+		if remaining, ok := hdneaRemainingLifetime(hdneaToken); ok && remaining <= hdneaRefreshLeadTime {
+			// Avoid sending near-expired token; let upstream issue a fresh cookie instead.
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] DashHandler skipping near-expired HDNEA token (remaining=%s)", remaining)
+			}
+			hdneaToken = ""
+		} else {
+			c.Request().Header.SetCookie("__hdnea__", hdneaToken)
+		}
 	}
 
 	// CRITICAL: Refresh credentials before proxying segments
