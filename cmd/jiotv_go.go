@@ -14,6 +14,7 @@ import (
 	"github.com/jiotv-go/jiotv_go/v3/pkg/epg"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/plugins/zee5"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/scheduler"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/store"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/utils"
 	"github.com/jiotv-go/jiotv_go/v3/web"
 
@@ -57,6 +58,14 @@ type JioTVServerConfig struct {
 // Returns an error if listening fails.
 func JioTVServer(jiotvServerConfig JioTVServerConfig) error {
 	// Config, Logger and Store are assumed to be initialized in main.go
+	if store.KVS == nil {
+		if err := store.Init(); err != nil {
+			log.Printf("WARN: failed to initialize store: %v", err)
+		}
+	}
+	if utils.Log == nil {
+		utils.Log = utils.GetLogger()
+	}
 
 	// if config EPG is true or file epg.xml.gz exists
 	if (config.Cfg.EPG && config.Cfg.EPGURL == "") || utils.FileExists(utils.GetPathPrefix()+"epg.xml.gz") {

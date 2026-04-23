@@ -304,10 +304,10 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 	quality := c.Query("q")
 	playerMode := c.Query("pm") // "hd" (force Shaka) or "auto" (try Shaka, fallback HLS)
 	if quality == "" {
-		quality = "high"
+		quality = "auto"
 	}
 	if playerMode == "" {
-		playerMode = "hd" // Default to HD mode
+		playerMode = "auto" // Default to auto mode
 	}
 
 	if isCustomChannel(channelID) {
@@ -319,6 +319,15 @@ func LiveMpdHandler(c *fiber.Ctx) error {
 		internalUtils.SetCacheHeader(c, 3600)
 		return c.Render("views/player_hls", fiber.Map{
 			"play_url": channel.URL,
+		})
+	}
+
+	if !isTrustedPlaybackOrigin(c) {
+		playURL := utils.BuildHLSPlayURL(quality, channelID)
+		internalUtils.SetCacheHeader(c, 3600)
+		return c.Render("views/player_hls", fiber.Map{
+			"play_url":          playURL,
+			"autoplay_fallback": true,
 		})
 	}
 
@@ -608,6 +617,13 @@ func MpdHandler(c *fiber.Ctx) error {
 
 	// If we got a fresh __hdnea__ from upstream, update dashBaseURL with it
 	if upstreamHDNEA != "" {
+		// Update the cache with fresh HDNEA token for subsequent requests
+		if channelID != "" {
+			setCachedHDNEA(channelID, upstreamHDNEA)
+			if os.Getenv("JIOTV_DEBUG") == "true" {
+				utils.Log.Printf("[DEBUG] Updated HDNEA cache for channel %s with fresh token from Set-Cookie", channelID)
+			}
+		}
 		encHDNEA, encErr := secureurl.EncryptURL("__hdnea__=" + upstreamHDNEA)
 		if encErr == nil {
 			dashBaseURL = fmt.Sprintf("/render.dash/host/%s/path/%s/hdnea/%s", encProxyHost, encProxyPath, encHDNEA)

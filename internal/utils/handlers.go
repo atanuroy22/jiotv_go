@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
@@ -68,20 +69,39 @@ func DecryptURLParam(paramName, encryptedURL string) (string, error) {
 	return decoded, nil
 }
 
+func extractHDNEAFromSetCookie(setCookie []byte) string {
+	if len(setCookie) == 0 {
+		return ""
+	}
+
+	for _, part := range bytes.Split(setCookie, []byte(";")) {
+		trimmed := bytes.TrimSpace(part)
+		switch {
+		case bytes.HasPrefix(trimmed, []byte("__hdnea__=")):
+			return string(bytes.TrimPrefix(trimmed, []byte("__hdnea__=")))
+		case bytes.HasPrefix(trimmed, []byte("hdnea=")):
+			return string(bytes.TrimPrefix(trimmed, []byte("hdnea=")))
+		}
+	}
+
+	return ""
+}
+
 // ProxyRequest performs a proxy request with common setup
-func ProxyRequest(c *fiber.Ctx, url string, client *fasthttp.Client, userAgent string) error {
+func ProxyRequest(c *fiber.Ctx, url string, client *fasthttp.Client, userAgent string) (string, error) {
 	if userAgent != "" {
 		SetCommonHeaders(c, userAgent)
 	}
 
 	if err := proxy.Do(c, url, client); err != nil {
-		return err
+		return "", err
 	}
 
+	newHDNEA := extractHDNEAFromSetCookie(c.Response().Header.Peek(fiber.HeaderSetCookie))
 	c.Response().Header.Del(fiber.HeaderServer)
 	// Do not leak upstream cookies to the client
 	c.Response().Header.Del(fiber.HeaderSetCookie)
-	return nil
+	return newHDNEA, nil
 }
 
 // ValidateRequiredParam checks if a required parameter is provided

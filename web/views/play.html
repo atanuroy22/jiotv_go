@@ -102,7 +102,8 @@
       <script>
         const channelId = {{ printf "%q" .ChannelID }};
         let current43Mode = false;
-        let playerModeIsHD = true;
+        let playerModeIsHD = false;
+        const forceAutoPlayerMode = {{if .force_auto_player_mode}}true{{else}}false{{end}};
 
         // SVG icon constants
         const DOWN_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"><path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v16.19l6.22-6.22a.75.75 0 1 1 1.06 1.06l-7.5 7.5a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06l6.22 6.22V3a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd" /></svg>';
@@ -140,10 +141,16 @@
           const label = document.getElementById("player-mode-label");
           const toggle = document.getElementById("player-mode-toggle");
           if (label) label.textContent = isHD ? "HD" : "auto";
-          if (toggle) toggle.checked = isHD;
+          if (toggle) {
+            toggle.checked = isHD;
+            toggle.disabled = forceAutoPlayerMode;
+          }
         }
 
         function togglePlayerMode() {
+          if (forceAutoPlayerMode) {
+            return;
+          }
           const toggle = document.getElementById("player-mode-toggle");
           playerModeIsHD = toggle.checked;
           localStorage.setItem("playerMode_" + channelId, playerModeIsHD ? "hd" : "auto");
@@ -160,9 +167,9 @@
           }
           updateAspectRatioUI(current43Mode);
           
-          // Initialize player mode (default is HD/true)
+          // Initialize player mode (default is auto)
           const savedPlayerMode = localStorage.getItem("playerMode_" + channelId);
-          playerModeIsHD = savedPlayerMode !== "auto"; // Default to HD if not set
+          playerModeIsHD = forceAutoPlayerMode ? false : savedPlayerMode === "hd";
           updatePlayerModeUI(playerModeIsHD);
           
           // Update player iframe src to include playerMode parameter

@@ -100,5 +100,6 @@ func WebEPGHandler(c *fiber.Ctx) error {
 func PosterHandler(c *fiber.Ctx) error {
 	// catch all params
 	url := EPG_POSTER_URL + c.Params("date") + "/" + c.Params("file")
-	return internalUtils.ProxyRequest(c, url, TV.Client, "")
+	_, err := internalUtils.ProxyRequest(c, url, TV.Client, "")
+	return err
 }
