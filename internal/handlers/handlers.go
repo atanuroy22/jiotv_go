@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"net/url"
@@ -43,7 +44,7 @@ const (
 	REQUEST_USER_AGENT    = headers.UserAgentOkHttp
 	hdneaCacheTTL         = 20 * time.Second // Short TTL to avoid reusing stale signed URLs during playback
 	hdneaRefreshLeadTime  = 20 * time.Second
-	renderM3U8CacheTTL    = 3 * time.Second  // Cache M3U8 for 3 seconds to reduce repeated requests
+	renderM3U8CacheTTL    = 3 * time.Second // Cache M3U8 for 3 seconds to reduce repeated requests
 )
 
 type hdneaCacheEntry struct {
@@ -54,6 +55,266 @@ type hdneaCacheEntry struct {
 type renderM3U8CacheEntry struct {
 	Content   string
 	UpdatedAt time.Time
+}
+
+var manifestQuotedURIRe = regexp.MustCompile(`URI="([^"]+)"`)
+
+func buildRenderM3U8CacheKey(channelID, quality, auth string) string {
+	if quality == "" {
+		quality = "auto"
+	}
+	return channelID + ":" + quality + ":" + auth
+}
+
+func manifestReferenceExtension(uri string) string {
+	cleanURI := uri
+	if idx := strings.IndexAny(cleanURI, "?#"); idx != -1 {
+		cleanURI = cleanURI[:idx]
+	}
+
+	lastDot := strings.LastIndex(cleanURI, ".")
+	if lastDot == -1 {
+		return ""
+	}
+
+	return strings.ToLower(cleanURI[lastDot:])
+}
+
+func resolveManifestReference(baseManifestURL, ref string) string {
+	refURL, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	if refURL.IsAbs() {
+		return refURL.String()
+	}
+
+	baseURL, err := url.Parse(baseManifestURL)
+	if err != nil {
+		return ref
+	}
+
+	return baseURL.ResolveReference(refURL).String()
+}
+
+func rewriteManifestReference(ref, baseManifestURL, params, channelID, quality string) string {
+	absoluteRef := resolveManifestReference(baseManifestURL, ref)
+
+	switch manifestReferenceExtension(absoluteRef) {
+	case ".m3u8":
+		return string(television.ReplaceM3U8(nil, []byte(absoluteRef), params, channelID, quality))
+	case ".ts":
+		return string(television.ReplaceTS(nil, []byte(absoluteRef), params, channelID))
+	case ".aac":
+		return string(television.ReplaceAAC(nil, []byte(absoluteRef), params, channelID))
+	case ".mp4", ".m4s":
+		return string(television.ReplaceTS(nil, []byte(absoluteRef), params, channelID))
+	case ".key", ".pkey":
+		return string(television.ReplaceKey([]byte(absoluteRef), params, channelID))
+	default:
+		return ref
+	}
+}
+
+func rewriteManifestBody(manifest []byte, baseManifestURL, params, channelID, quality string) []byte {
+	scanner := bufio.NewScanner(bytes.NewReader(manifest))
+	processedLines := make([]string, 0)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" {
+			processedLines = append(processedLines, line)
+			continue
+		}
+
+		if matches := manifestQuotedURIRe.FindAllStringSubmatchIndex(line, -1); len(matches) > 0 {
+			var builder strings.Builder
+			last := 0
+			for _, match := range matches {
+				builder.WriteString(line[last:match[2]])
+				builder.WriteString(rewriteManifestReference(line[match[2]:match[3]], baseManifestURL, params, channelID, quality))
+				last = match[3]
+			}
+			builder.WriteString(line[last:])
+			processedLines = append(processedLines, builder.String())
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "#") {
+			processedLines = append(processedLines, line)
+			continue
+		}
+
+		start := strings.Index(line, trimmed)
+		if start == -1 {
+			processedLines = append(processedLines, rewriteManifestReference(trimmed, baseManifestURL, params, channelID, quality))
+			continue
+		}
+
+		end := start + len(trimmed)
+		rewritten := rewriteManifestReference(trimmed, baseManifestURL, params, channelID, quality)
+		processedLines = append(processedLines, line[:start]+rewritten+line[end:])
+	}
+
+	return []byte(strings.Join(processedLines, "\n"))
+}
+
+func isDebugLoggingEnabled() bool {
+	return os.Getenv("JIOTV_DEBUG") == "true"
+}
+
+func sanitizeURLForLog(raw string) string {
+	if raw == "" {
+		return "(empty)"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		if len(raw) > 180 {
+			return raw[:177] + "..."
+		}
+		return raw
+	}
+
+	query := parsed.Query()
+	for _, key := range []string{"auth", "hdnea", "__hdnea__", "token"} {
+		if query.Has(key) {
+			query.Set(key, "[redacted]")
+		}
+	}
+	parsed.RawQuery = query.Encode()
+
+	sanitized := parsed.String()
+	if len(sanitized) > 180 {
+		return sanitized[:177] + "..."
+	}
+	return sanitized
+}
+
+func summarizeManifestForLog(manifest []byte) string {
+	type manifestLogStats struct {
+		lines      int
+		quotedURIs int
+		m3u8       int
+		ts         int
+		aac        int
+		mp4        int
+		m4s        int
+		key        int
+		renderM3U8 int
+		renderTS   int
+		renderKey  int
+		samples    []string
+	}
+
+	stats := manifestLogStats{
+		samples: make([]string, 0, 5),
+	}
+
+	addSample := func(ref string) {
+		sanitized := sanitizeURLForLog(ref)
+		if sanitized == "" {
+			return
+		}
+		for _, existing := range stats.samples {
+			if existing == sanitized {
+				return
+			}
+		}
+		if len(stats.samples) < 5 {
+			stats.samples = append(stats.samples, sanitized)
+		}
+	}
+
+	addRef := func(ref string) {
+		switch manifestReferenceExtension(ref) {
+		case ".m3u8":
+			stats.m3u8++
+		case ".ts":
+			stats.ts++
+		case ".aac":
+			stats.aac++
+		case ".mp4":
+			stats.mp4++
+		case ".m4s":
+			stats.m4s++
+		case ".key", ".pkey":
+			stats.key++
+		}
+
+		if strings.Contains(ref, "/render.m3u8") {
+			stats.renderM3U8++
+		}
+		if strings.Contains(ref, "/render.ts") {
+			stats.renderTS++
+		}
+		if strings.Contains(ref, "/render.key") || strings.Contains(ref, "/render.pkey") {
+			stats.renderKey++
+		}
+
+		addSample(ref)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(manifest))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		stats.lines++
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		matches := manifestQuotedURIRe.FindAllStringSubmatch(line, -1)
+		if len(matches) > 0 {
+			stats.quotedURIs += len(matches)
+			for _, match := range matches {
+				if len(match) > 1 {
+					addRef(match[1])
+				}
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		addRef(trimmed)
+	}
+
+	return fmt.Sprintf(
+		"lines=%d quoted=%d refs[m3u8=%d ts=%d aac=%d mp4=%d m4s=%d key=%d] rewritten[render.m3u8=%d render.ts=%d render.key=%d] samples=%q",
+		stats.lines,
+		stats.quotedURIs,
+		stats.m3u8,
+		stats.ts,
+		stats.aac,
+		stats.mp4,
+		stats.m4s,
+		stats.key,
+		stats.renderM3U8,
+		stats.renderTS,
+		stats.renderKey,
+		stats.samples,
+	)
+}
+
+func logManifestDiagnostics(prefix, channelID, quality, renderURL string, manifest []byte) {
+	if !isDebugLoggingEnabled() {
+		return
+	}
+
+	utils.Log.Printf(
+		"[DEBUG] %s channel=%s quality=%s url=%s %s",
+		prefix,
+		channelID,
+		quality,
+		sanitizeURLForLog(renderURL),
+		summarizeManifestForLog(manifest),
+	)
 }
 
 // truncateToken returns first 10 and last 10 chars of token for logging
@@ -191,7 +452,7 @@ func IndexHandler(c *fiber.Ctx) error {
 	category := c.Query("category")
 
 	// Process logo URLs for all channels
-	hostURL := c.Protocol() + "://" + c.Hostname()
+	hostURL := internalUtils.ExternalBaseURL(c)
 	for i, channel := range channels.Result {
 		if strings.HasPrefix(channel.LogoURL, "http://") || strings.HasPrefix(channel.LogoURL, "https://") {
 			// Custom channel with full URL, use as-is
@@ -698,8 +959,8 @@ func RenderHandler(c *fiber.Ctx) error {
 	if quality == "" {
 		quality = "auto"
 	}
-	cacheKey := channel_id + ":" + quality
-	
+	cacheKey := buildRenderM3U8CacheKey(channel_id, quality, auth)
+
 	if cached, ok := renderM3U8Cache.Load(cacheKey); ok {
 		entry := cached.(renderM3U8CacheEntry)
 		if time.Since(entry.UpdatedAt) < renderM3U8CacheTTL {
@@ -853,16 +1114,11 @@ func RenderHandler(c *fiber.Ctx) error {
 			}
 		}
 	}
+
+	logManifestDiagnostics("RenderHandler upstream manifest", channel_id, quality, renderURL, renderResult)
 	// No client cookie: if upstream rotated __hdnea__, we'll embed the fresh token into rewritten URLs below
 
-	// baseUrl is the part of the url excluding suffix file.m3u8 and params is the part of the url after the suffix
 	split_url_by_params := strings.Split(renderURL, "?")
-	baseStringUrl := split_url_by_params[0]
-	// Pattern to match file names ending with .m3u8
-	pattern := `[a-z0-9=\_\-A-Z\.]*\.m3u8`
-	re := regexp.MustCompile(pattern)
-	// Add baseUrl to all the file names ending with .m3u8
-	baseUrl := []byte(re.ReplaceAllString(baseStringUrl, ""))
 	params := ""
 	if len(split_url_by_params) > 1 {
 		params = split_url_by_params[1]
@@ -886,43 +1142,8 @@ func RenderHandler(c *fiber.Ctx) error {
 		params = "__hdnea__=" + cachedHDNEA
 	}
 
-	// replacer replaces all the file names ending with .m3u8 and .ts with our own server URLs
-	// More info: https://golang.org/pkg/regexp/#Regexp.ReplaceAllFunc
-	replacer := func(match []byte) []byte {
-		switch {
-		case bytes.HasSuffix(match, []byte(".m3u8")):
-			return television.ReplaceM3U8(baseUrl, match, params, channel_id, c.Query("q"))
-		case bytes.HasSuffix(match, []byte(".ts")):
-			return television.ReplaceTS(baseUrl, match, params, channel_id)
-		case bytes.HasSuffix(match, []byte(".aac")):
-			return television.ReplaceAAC(baseUrl, match, params, channel_id)
-		default:
-			return match
-		}
-	}
-
-	// Pattern to match file names ending with .m3u8 and .ts
-	pattern = `[a-z0-9=\_\-A-Z\/\.]*\.(m3u8|ts|aac)`
-	re = regexp.MustCompile(pattern)
-	// Execute replacer function on renderResult
-	renderResult = re.ReplaceAllFunc(renderResult, replacer)
-
-	// replacer_key replaces all the URLs ending with .key and .pkey with our own server URLs
-	replacer_key := func(match []byte) []byte {
-		switch {
-		case bytes.HasSuffix(match, []byte(".key")) || bytes.HasSuffix(match, []byte(".pkey")):
-			return television.ReplaceKey(match, params, channel_id)
-		default:
-			return match
-		}
-	}
-
-	// Pattern to match URLs ending with .key and .pkey
-	pattern_key := `http[\S]+\.(pkey|key)`
-	re_key := regexp.MustCompile(pattern_key)
-
-	// Execute replacer_key function on renderResult
-	renderResult = re_key.ReplaceAllFunc(renderResult, replacer_key)
+	renderResult = rewriteManifestBody(renderResult, renderURL, params, channel_id, quality)
+	logManifestDiagnostics("RenderHandler rewritten manifest", channel_id, quality, renderURL, renderResult)
 
 	if statusCode != fiber.StatusOK {
 		utils.Log.Println("Error rendering M3U8 file")
@@ -1089,11 +1310,32 @@ func RenderTSHandler(c *fiber.Ctx) error {
 		}
 	}
 
+	if isDebugLoggingEnabled() {
+		utils.Log.Printf(
+			"[DEBUG] RenderTSHandler request channel=%s quality=%s ext=%s has_cookie_hdnea=%t url=%s",
+			channelID,
+			quality,
+			manifestReferenceExtension(decoded_url),
+			len(c.Request().Header.Cookie("__hdnea__")) > 0,
+			sanitizeURLForLog(decoded_url),
+		)
+	}
+
 	if err := internalUtils.ProxyRequest(c, decoded_url, TV.Client, PLAYER_USER_AGENT); err != nil {
 		return err
 	}
 
 	statusCode := c.Response().StatusCode()
+	if isDebugLoggingEnabled() {
+		utils.Log.Printf(
+			"[DEBUG] RenderTSHandler response channel=%s quality=%s status=%d content_type=%s content_length=%s",
+			channelID,
+			quality,
+			statusCode,
+			string(c.Response().Header.Peek("Content-Type")),
+			string(c.Response().Header.Peek("Content-Length")),
+		)
+	}
 	if statusCode == fiber.StatusForbidden || statusCode == fiber.StatusUnauthorized {
 		if os.Getenv("JIOTV_DEBUG") == "true" {
 			utils.Log.Printf("[DEBUG] RenderTSHandler got %d response - forcing refresh and retrying", statusCode)
@@ -1115,8 +1357,28 @@ func RenderTSHandler(c *fiber.Ctx) error {
 			}
 		}
 
+		if isDebugLoggingEnabled() {
+			utils.Log.Printf(
+				"[DEBUG] RenderTSHandler retry request channel=%s quality=%s url=%s",
+				channelID,
+				quality,
+				sanitizeURLForLog(retryUrl),
+			)
+		}
+
 		if err := internalUtils.ProxyRequest(c, retryUrl, TV.Client, PLAYER_USER_AGENT); err != nil {
 			return err
+		}
+
+		if isDebugLoggingEnabled() {
+			utils.Log.Printf(
+				"[DEBUG] RenderTSHandler retry response channel=%s quality=%s status=%d content_type=%s content_length=%s",
+				channelID,
+				quality,
+				c.Response().StatusCode(),
+				string(c.Response().Header.Peek("Content-Type")),
+				string(c.Response().Header.Peek("Content-Length")),
+			)
 		}
 	}
 
@@ -1141,8 +1403,8 @@ func ChannelsHandler(c *fiber.Ctx) error {
 		apiResponse.Result = append(apiResponse.Result, pluginChannels...)
 	}
 
-	// hostUrl should be request URL like http://localhost:5001
-	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
+	// hostUrl should be the externally visible request URL, including reverse-proxy headers.
+	hostURL := internalUtils.ExternalBaseURL(c)
 
 	// Check if the query parameter "type" is set to "m3u"
 	if c.Query("type") == "m3u" {

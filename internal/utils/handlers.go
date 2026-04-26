@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
@@ -124,4 +125,62 @@ func SetCacheHeader(c *fiber.Ctx, maxAge int) {
 // SetMustRevalidateHeader sets a cache header that must revalidate
 func SetMustRevalidateHeader(c *fiber.Ctx, maxAge int) {
 	c.Response().Header.Set("Cache-Control", fmt.Sprintf("public, must-revalidate, max-age=%d", maxAge))
+}
+
+// ExternalBaseURL returns the public URL for the current request.
+// Reverse proxies should pass X-Forwarded-Proto and X-Forwarded-Host so
+// generated playlists keep the browser on the same trusted origin.
+func ExternalBaseURL(c *fiber.Ctx) string {
+	proto := firstHeaderValue(c.Get("X-Forwarded-Proto"))
+	host := firstHeaderValue(c.Get("X-Forwarded-Host"))
+
+	if forwarded := c.Get("Forwarded"); forwarded != "" {
+		if proto == "" {
+			proto = forwardedParam(forwarded, "proto")
+		}
+		if host == "" {
+			host = forwardedParam(forwarded, "host")
+		}
+	}
+
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	if proto != "http" && proto != "https" {
+		proto = strings.ToLower(c.Protocol())
+	}
+	if proto == "" {
+		proto = "http"
+	}
+
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = c.Hostname()
+	}
+
+	return proto + "://" + host
+}
+
+func firstHeaderValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if idx := strings.Index(value, ","); idx >= 0 {
+		value = value[:idx]
+	}
+	return strings.Trim(strings.TrimSpace(value), `"`)
+}
+
+func forwardedParam(value, key string) string {
+	key = strings.ToLower(key)
+	first := firstHeaderValue(value)
+	for _, part := range strings.Split(first, ";") {
+		pair := strings.SplitN(part, "=", 2)
+		if len(pair) != 2 {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(pair[0])) == key {
+			return strings.Trim(strings.TrimSpace(pair[1]), `"`)
+		}
+	}
+	return ""
 }

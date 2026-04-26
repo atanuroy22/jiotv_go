@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
+	internalUtils "github.com/jiotv-go/jiotv_go/v3/internal/utils"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 )
@@ -72,14 +73,14 @@ func (l Zee5Language) String() string {
 }
 
 type ChannelItem struct {
-	ID       string      `json:"id"`
-	Name     string      `json:"name"`
-	URL      string      `json:"url"`
-	Logo     string      `json:"logo"`
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	URL      string       `json:"url"`
+	Logo     string       `json:"logo"`
 	Language Zee5Language `json:"language"`
-	Slug     string      `json:"slug"`
-	Genre    string      `json:"genre"`
-	Chno     string      `json:"chno"`
+	Slug     string       `json:"slug"`
+	Genre    string       `json:"genre"`
+	Chno     string       `json:"chno"`
 }
 
 // zee5LangToJioTV maps ISO 639-1 language codes from zee5 data to JioTV language IDs.
@@ -187,13 +188,13 @@ func LiveHandler(c *fiber.Ctx) error {
 		cookie = cookieMap["cookie"]
 		cache.Add(uaHash, cookie)
 	}
-	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
+	hostURL := internalUtils.ExternalBaseURL(c)
 	handlePlaylist(c, true, url+"?"+cookie, hostURL)
 	return nil
 }
 
 func RenderHandler(c *fiber.Ctx) error {
-	hostURL := strings.ToLower(c.Protocol()) + "://" + c.Hostname()
+	hostURL := internalUtils.ExternalBaseURL(c)
 	coded_url, err := secureurl.DecryptURL(c.Query("auth"))
 	if err != nil {
 		return err

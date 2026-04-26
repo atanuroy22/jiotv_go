@@ -266,3 +266,8 @@ jiotv_go background start --config config.toml --args "--port 8080"
 For any issues or feature requests, please check the [GitHub repository](https://github.com/atanuroy22/jiotv_go) or create a new issue.
 
 **Note:** Ensure that you have the necessary permissions and follow the terms of service when using JioTV Go.
+
+---
+
+For DRM with reverse proxy setup, see:
+- [Reverse Proxy (DRM)](./reverse-proxy.md)

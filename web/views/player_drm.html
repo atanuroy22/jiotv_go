@@ -188,10 +188,17 @@
         const isWindows = ua.includes("windows");
 
         if (licenseUrl && !isSecureDRMContext) {
+          const targetUrl = hlsPlayerFallbackUrl || hlsFallbackUrl;
+          if (targetUrl) {
+            hasFallenBack = true;
+            console.warn("DRM is unavailable on this HTTP origin; falling back to HLS:", targetUrl);
+            window.location.replace(targetUrl);
+            return;
+          }
           showFatalError(
-            "HTTPS Required for DRM",
-            "This DRM channel cannot play over plain HTTP when accessed by LAN/IP address. Open this page using HTTPS.",
-            "jiotv_go serve --public --tls --tls-cert cert.pem --tls-key key.pem"
+            "DRM Requires A Secure Origin",
+            "This browser will not expose Widevine DRM on this plain HTTP network origin. No HLS fallback URL is available for this channel.",
+            ""
           );
           return;
         }

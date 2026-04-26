@@ -30,8 +30,146 @@
   <body>
     <div id="jiotv_go_player"></div>
     <script>
+      const playUrl = "{{ .play_url }}";
+      const playerDebugPrefix = "[JioTV HLS]";
+      const playerMediaDebugPattern = /(render\.m3u8|render\.ts|render\.key|render\.pkey|\.m3u8|\.ts|\.aac|\.mp4|\.m4s|\.key|\.pkey)/i;
+
+      function sanitizeDebugUrl(rawUrl) {
+        if (!rawUrl) {
+          return "(empty)";
+        }
+
+        try {
+          const parsedUrl = new URL(rawUrl, window.location.href);
+          ["auth", "hdnea", "__hdnea__", "token"].forEach((key) => {
+            if (parsedUrl.searchParams.has(key)) {
+              parsedUrl.searchParams.set(key, "[redacted]");
+            }
+          });
+          return parsedUrl.pathname + parsedUrl.search;
+        } catch (error) {
+          return String(rawUrl);
+        }
+      }
+
+      function shouldLogMediaUrl(rawUrl) {
+        return typeof rawUrl === "string" && playerMediaDebugPattern.test(rawUrl);
+      }
+
+      function logPlayerDebug(message, payload) {
+        if (payload === undefined) {
+          console.log(playerDebugPrefix, message);
+          return;
+        }
+        console.log(playerDebugPrefix, message, payload);
+      }
+
+      (function instrumentMediaNetworkDebugging() {
+        if (typeof window.fetch === "function") {
+          const originalFetch = window.fetch.bind(window);
+          window.fetch = function (input, init) {
+            const requestUrl = typeof input === "string" ? input : input && input.url;
+            const shouldLog = shouldLogMediaUrl(requestUrl);
+            const sanitizedUrl = sanitizeDebugUrl(requestUrl);
+
+            if (shouldLog) {
+              logPlayerDebug("fetch:start", {
+                method: (init && init.method) || "GET",
+                url: sanitizedUrl,
+              });
+            }
+
+            return originalFetch(input, init)
+              .then((response) => {
+                if (shouldLog) {
+                  logPlayerDebug("fetch:end", {
+                    status: response.status,
+                    url: sanitizedUrl,
+                    contentType: response.headers.get("content-type"),
+                  });
+                }
+                return response;
+              })
+              .catch((error) => {
+                if (shouldLog) {
+                  logPlayerDebug("fetch:error", {
+                    url: sanitizedUrl,
+                    error: error && error.message ? error.message : String(error),
+                  });
+                }
+                throw error;
+              });
+          };
+        }
+
+        if (window.XMLHttpRequest) {
+          const originalOpen = XMLHttpRequest.prototype.open;
+          const originalSend = XMLHttpRequest.prototype.send;
+
+          XMLHttpRequest.prototype.open = function (method, url) {
+            this.__jiotvDebugMethod = method;
+            this.__jiotvDebugUrl = url;
+            return originalOpen.apply(this, arguments);
+          };
+
+          XMLHttpRequest.prototype.send = function () {
+            const requestUrl = this.__jiotvDebugUrl;
+            const shouldLog = shouldLogMediaUrl(requestUrl);
+            const sanitizedUrl = sanitizeDebugUrl(requestUrl);
+
+            if (shouldLog) {
+              logPlayerDebug("xhr:start", {
+                method: this.__jiotvDebugMethod || "GET",
+                url: sanitizedUrl,
+              });
+
+              this.addEventListener("loadend", () => {
+                logPlayerDebug("xhr:end", {
+                  method: this.__jiotvDebugMethod || "GET",
+                  status: this.status,
+                  url: sanitizedUrl,
+                  responseURL: sanitizeDebugUrl(this.responseURL || requestUrl),
+                  contentType: this.getResponseHeader("content-type"),
+                });
+              });
+
+              this.addEventListener("error", () => {
+                logPlayerDebug("xhr:error", {
+                  method: this.__jiotvDebugMethod || "GET",
+                  url: sanitizedUrl,
+                });
+              });
+            }
+
+            return originalSend.apply(this, arguments);
+          };
+        }
+      })();
+
+      window.addEventListener("error", (event) => {
+        logPlayerDebug("window:error", {
+          message: event.message,
+          source: event.filename,
+          line: event.lineno,
+          column: event.colno,
+        });
+      });
+
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason;
+        logPlayerDebug("window:unhandledrejection", {
+          reason: reason && reason.message ? reason.message : String(reason),
+        });
+      });
+
+      logPlayerDebug("player:init", {
+        src: sanitizeDebugUrl(playUrl),
+        autoplayFallback: {{if .autoplay_fallback}}true{{else}}false{{end}},
+        isCatchup: {{if .is_catchup}}true{{else}}false{{end}},
+      });
+
       var player = flowplayer("#jiotv_go_player", {
-        src: "{{ .play_url }}",
+        src: playUrl,
         auto_orient: true,
         live: {{if .is_catchup}}false{{else}}true{{end}},
         seekable: {{if .is_catchup}}true{{else}}false{{end}},
@@ -48,6 +186,20 @@
         },
         ui: flowplayer.ui.USE_THIN_CONTROLBAR,
       });
+
+      if (flowplayer.events.READY) {
+        player.on(flowplayer.events.READY, () => {
+          logPlayerDebug("player:ready", {
+            src: sanitizeDebugUrl(playUrl),
+          });
+        });
+      }
+
+      if (flowplayer.events.ERROR) {
+        player.on(flowplayer.events.ERROR, (event) => {
+          logPlayerDebug("player:error", event);
+        });
+      }
 
       function initDpadRemoteSupport() {
         const playerRoot = document.querySelector(".flowplayer");

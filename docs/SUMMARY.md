@@ -9,6 +9,7 @@
   - [Windows](./usage/windows.md)
   - [Linux / macOS](./usage/linux-macos.md)
   - [IPTV Guide](./usage/iptv.md)
+  - [Reverse Proxy (DRM)](./usage/reverse-proxy.md)
   - [URL Paths](./usage/paths.md)
 - [Config](./config.md)
 - [Custom Channels](./CUSTOM_CHANNELS.md)

@@ -11,3 +11,6 @@ We have implemented a new DRM component for the web which enables new channels t
 *   **Community Support:** You are free to discuss this on the community support group, but please **do not** bother admins and moderators with how-to questions regarding this experimental feature.
 
 See [config.md](./config.md#drm-digital-rights-management) for how to enable DRM.
+
+If you prefer to keep JioTV Go on internal HTTP and use HTTPS only at proxy layer, see:
+- [Reverse Proxy (DRM)](./usage/reverse-proxy.md)

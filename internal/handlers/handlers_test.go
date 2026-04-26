@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jiotv-go/jiotv_go/v3/internal/config"
+	"github.com/jiotv-go/jiotv_go/v3/pkg/secureurl"
 	"github.com/jiotv-go/jiotv_go/v3/pkg/television"
 	"github.com/valyala/fasthttp"
 )
@@ -241,6 +243,100 @@ func TestRenderHandler(t *testing.T) {
 				t.Errorf("RenderHandler() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestBuildRenderM3U8CacheKey(t *testing.T) {
+	keyA := buildRenderM3U8CacheKey("370", "high", "auth-one")
+	keyB := buildRenderM3U8CacheKey("370", "high", "auth-two")
+	defaultQualityKey := buildRenderM3U8CacheKey("370", "", "auth-one")
+	explicitAutoKey := buildRenderM3U8CacheKey("370", "auto", "auth-one")
+
+	if keyA == keyB {
+		t.Fatalf("expected auth to affect cache key, got identical keys %q", keyA)
+	}
+
+	if defaultQualityKey != explicitAutoKey {
+		t.Fatalf("expected empty quality to normalize to auto, got %q and %q", defaultQualityKey, explicitAutoKey)
+	}
+}
+
+func decryptRewrittenAuth(t *testing.T, rewrittenURL string) string {
+	t.Helper()
+
+	parsedURL, err := url.Parse(rewrittenURL)
+	if err != nil {
+		t.Fatalf("failed to parse rewritten URL %q: %v", rewrittenURL, err)
+	}
+
+	auth := parsedURL.Query().Get("auth")
+	if auth == "" {
+		t.Fatalf("rewritten URL %q is missing auth param", rewrittenURL)
+	}
+
+	decryptedURL, err := secureurl.DecryptURL(auth)
+	if err != nil {
+		t.Fatalf("failed to decrypt auth param for %q: %v", rewrittenURL, err)
+	}
+
+	return decryptedURL
+}
+
+func TestRewriteManifestReference_RewritesCMAFSegment(t *testing.T) {
+	secureurl.Init()
+
+	rewritten := rewriteManifestReference(
+		"segments/part-00001.m4s?foo=1",
+		"https://cdn.example.com/live/playlist.m3u8",
+		"__hdnea__=fresh-token",
+		"156",
+		"high",
+	)
+
+	if !strings.HasPrefix(rewritten, "/render.ts?auth=") {
+		t.Fatalf("expected CMAF segment to be proxied through /render.ts, got %q", rewritten)
+	}
+
+	if !strings.Contains(rewritten, "channel_key_id=156") {
+		t.Fatalf("expected rewritten CMAF segment to include channel id, got %q", rewritten)
+	}
+
+	decryptedURL := decryptRewrittenAuth(t, rewritten)
+	wantURL := "https://cdn.example.com/live/segments/part-00001.m4s?foo=1&__hdnea__=fresh-token"
+	if decryptedURL != wantURL {
+		t.Fatalf("unexpected decrypted segment URL\nwant: %s\ngot:  %s", wantURL, decryptedURL)
+	}
+}
+
+func TestRewriteManifestBody_RewritesQuotedURIsAndKeys(t *testing.T) {
+	secureurl.Init()
+
+	manifest := []byte(strings.Join([]string{
+		"#EXTM3U",
+		`#EXT-X-MAP:URI="init.mp4"`,
+		`#EXT-X-PART:DURATION=0.333,URI="parts/part-00001.m4s"`,
+		`#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/live.key"`,
+		"variant/audio.m3u8",
+	}, "\n"))
+
+	rewritten := string(rewriteManifestBody(
+		manifest,
+		"https://cdn.example.com/live/playlist.m3u8",
+		"__hdnea__=fresh-token",
+		"156",
+		"high",
+	))
+
+	if !strings.Contains(rewritten, `URI="/render.ts?auth=`) {
+		t.Fatalf("expected EXT-X-MAP and EXT-X-PART URIs to be proxied, got %q", rewritten)
+	}
+
+	if !strings.Contains(rewritten, `/render.key?auth=`) {
+		t.Fatalf("expected EXT-X-KEY URI to be proxied, got %q", rewritten)
+	}
+
+	if !strings.Contains(rewritten, `/render.m3u8?auth=`) {
+		t.Fatalf("expected child playlist URI to be proxied, got %q", rewritten)
 	}
 }
 
